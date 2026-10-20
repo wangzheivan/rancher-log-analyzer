@@ -1,0 +1,27 @@
+image:
+  repository: registry.example.com/rancher-log-analyzer/rancher-log-analyzer
+  tag: "0.1.0-20261020-03"
+  pullPolicy: IfNotPresent
+imagePullSecrets: []
+service:
+  type: NodePort
+  port: 8080
+  nodePort: 30080
+limits:
+  uploadBytes: "1073741824"
+  unpackBytes: "5368709120"
+  sessionBytes: "10737418240"
+  archiveFiles: "20000"
+  archiveDepth: "32"
+emptyDirSize: 12Gi
+resources:
+  requests:
+    cpu: 100m
+    memory: 256Mi
+    ephemeral-storage: 1Gi
+  limits:
+    cpu: "2"
+    memory: 1Gi
+    ephemeral-storage: 14Gi
+nodeSelector: {}
+tolerations: []

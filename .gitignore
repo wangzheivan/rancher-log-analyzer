@@ -1,0 +1,31 @@
+.venv/
+__pycache__/
+.pytest_cache/
+*.pyc
+frontend/node_modules/
+frontend/dist/
+frontend/*.tsbuildinfo
+frontend/test-results/
+frontend/playwright-report/
+artifacts/
+.data/
+node*-20*/
+*.tar.gz
+*.tgz
+.env
+# Local tool settings and credentials
+.agents/
+.codex/
+.aws/
+.kube/
+.docker/
+.env.*
+!.env.example
+*.pem
+*.key
+# Raw logs and additional archive formats
+*.log
+*.tar
+*.tar.bz2
+*.tar.xz
+*.zip

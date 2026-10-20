@@ -1,0 +1,5 @@
+Rancher Log Explorer is installed in {{ .Release.Namespace }}.
+{{- if eq .Values.service.type "NodePort" }}
+Open http://<reachable-node-ip>:{{ .Values.service.nodePort }}
+{{- end }}
+This is a SHARED EPHEMERAL workspace. Restarting the service clears all cases and uploads.

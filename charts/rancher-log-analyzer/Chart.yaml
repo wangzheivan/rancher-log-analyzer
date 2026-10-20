@@ -1,0 +1,6 @@
+apiVersion: v2
+name: rancher-log-analyzer
+description: Ephemeral offline Rancher support bundle explorer
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
