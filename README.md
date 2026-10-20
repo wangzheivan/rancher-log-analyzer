@@ -8,6 +8,24 @@ Rancher 官方日志采集包的中文可视化工具，支持：
 
 详细的本地开发、配置、API 和测试说明见 [使用与开发说明](docs/USAGE.md)。
 
+## Docker 部署
+
+安装 Docker 后，在项目根目录构建镜像并启动容器：
+
+```bash
+docker build -t rancher-log-analyzer:local .
+
+docker run -d \
+  --name rancher-log-analyzer \
+  --restart unless-stopped \
+  -p 8080:8080 \
+  rancher-log-analyzer:local
+```
+
+访问 `http://localhost:8080`；部署在服务器上时，通过 `http://<服务器IP>:8080` 访问。已有镜像时，将命令中的 `rancher-log-analyzer:local` 替换为完整镜像地址即可，私有仓库需先执行 `docker login <镜像仓库地址>`。
+
+临时数据保存在容器内 `/data`，容器重启会清空。上传与解压大小等配置可通过 `docker run -e` 设置，详见 [配置说明](docs/USAGE.md#限制与展示语义)。
+
 ## Kubernetes 部署
 
 准备可访问集群的 `kubectl`、Helm，以及可供节点拉取的镜像仓库；使用构建脚本时还需要 Docker 和 Python 3。以下命令在项目根目录执行，示例参数请替换为自己的环境。
