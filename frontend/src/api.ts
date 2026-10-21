@@ -27,6 +27,7 @@ export const stateNames: Record<string, string> = {
   queued: "排队中",
   extracting: "解压中",
   parsing: "解析中",
+  indexing: "建立索引中",
   ready: "已就绪",
   failed: "失败",
 };

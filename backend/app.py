@@ -10,6 +10,7 @@ from starlette.requests import ClientDisconnect
 from .archive import ImportFailure
 from .config import Settings
 from .store import Store
+from .classification import load_rules
 
 
 class CaseName(BaseModel):
@@ -25,6 +26,7 @@ class CaseName(BaseModel):
 
 def create_app(settings=None):
     settings = settings or Settings()
+    load_rules(settings.classification_rules)
     store = Store(settings)
 
     @asynccontextmanager
@@ -33,7 +35,7 @@ def create_app(settings=None):
         yield
         store.close()
 
-    app = FastAPI(title='Rancher Log Explorer', version='0.1.0', lifespan=lifespan,
+    app = FastAPI(title='Rancher Log Explorer', version='0.2.0', lifespan=lifespan,
                   docs_url=None, redoc_url=None)
     app.state.store = store
 
@@ -55,7 +57,7 @@ def create_app(settings=None):
 
     @app.get('/api/v1/health')
     def health():
-        return {'status': 'ok', 'mode': 'ephemeral', 'version': '0.1.0'}
+        return {'status': 'ok', 'mode': 'ephemeral', 'version': '0.2.0'}
 
     @app.get('/api/v1/session')
     def session():
@@ -117,6 +119,46 @@ def create_app(settings=None):
     def delete_bundle(bundle_id: str):
         store.delete_bundle(bundle_id)
 
+    @app.exception_handler(ValueError)
+    async def bad_input(request, exc):
+        return JSONResponse({'detail': str(exc)}, status_code=400)
+
+    @app.get('/api/v1/bundles/{bundle_id}/overview')
+    def overview(bundle_id: str):
+        return store.parsed(bundle_id).overview
+
+    @app.get('/api/v1/bundles/{bundle_id}/catalog/{kind}')
+    def catalog(bundle_id: str, kind: str, limit: int = Query(50, ge=1, le=200), cursor: str = Query('', max_length=2000),
+                q: str = Query('', max_length=500), namespace: str = Query('', max_length=253),
+                node: str = Query('', max_length=253), status: str = Query('', max_length=100),
+                scope: str = Query('', max_length=30), component: str = Query('', max_length=253),
+                resource: str = Query('', max_length=253), pod: str = Query('', max_length=100),
+                object_name: str = Query('', max_length=253), object_kind: str = Query('', max_length=100),
+                object_uid: str = Query('', max_length=100), has_logs: bool = False, name: str = Query('', max_length=253), reason: str = Query('', max_length=253)):
+        return store.parsed(bundle_id).catalog(kind, limit, cursor, q, namespace, node, status, scope,
+                                              component, resource, pod, object_name, object_kind, object_uid, has_logs, name, reason)
+
+    @app.get('/api/v1/bundles/{bundle_id}/detail/{kind}/{entity_id}')
+    def detail(bundle_id: str, kind: str, entity_id: str):
+        return store.parsed(bundle_id).entity(kind, entity_id)
+
+    @app.get('/api/v1/bundles/{bundle_id}/completeness')
+    def completeness(bundle_id: str):
+        return store.parsed(bundle_id).completeness()
+
+    @app.get('/api/v1/bundles/{bundle_id}/files/{file_id}/info')
+    def file_info(bundle_id: str, file_id: str):
+        return store.parsed(bundle_id).file(file_id)
+
+    @app.get('/api/v1/bundles/{bundle_id}/file-source')
+    def file_source(bundle_id: str, path: str = Query(max_length=4096)):
+        # Only indexed source paths can be resolved, never arbitrary filesystem paths.
+        from .catalog import identity
+        file = store.parsed(bundle_id).file(identity(path))
+        if file['path'] != path:
+            raise FileNotFoundError(path)
+        return file
+
     @app.get('/api/v1/bundles/{bundle_id}/summary')
     def summary(bundle_id: str):
         return store.parsed(bundle_id).summary
@@ -137,8 +179,9 @@ def create_app(settings=None):
         return bundle.resources[name]
 
     @app.get('/api/v1/bundles/{bundle_id}/files/{file_id}')
-    def file_page(bundle_id: str, file_id: str, offset: int = Query(0, ge=0), q: str = Query('', max_length=500)):
-        return store.parsed(bundle_id).file_page(file_id, offset, q)
+    def file_page(bundle_id: str, file_id: str, offset: int = Query(0, ge=0), q: str = Query('', max_length=500), direction: str = 'forward',
+                  anchor: str = '', end: int | None = Query(None, ge=0)):
+        return store.parsed(bundle_id).file_page(file_id, offset, q, direction, anchor, end)
 
     assets = settings.frontend_dir / 'assets'
     if assets.is_dir():

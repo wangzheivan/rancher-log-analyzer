@@ -54,6 +54,10 @@ spec:
               value: {{ .Values.limits.archiveFiles | quote }}
             - name: MAX_ARCHIVE_DEPTH
               value: {{ .Values.limits.archiveDepth | quote }}
+            - name: MAX_INDEX_BYTES
+              value: {{ .Values.limits.indexBytes | quote }}
+            - name: LOG_CLASSIFICATION_RULES
+              value: {{ .Values.logClassificationRules | toJson | quote }}
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
           startupProbe:

@@ -13,3 +13,5 @@ class Settings:
     max_files: int = int(os.environ.get('MAX_ARCHIVE_FILES', 20000))
     max_depth: int = int(os.environ.get('MAX_ARCHIVE_DEPTH', 32))
     frontend_dir: Path = Path(os.environ.get('FRONTEND_DIR', 'frontend/dist'))
+    index_limit: int = int(os.environ.get("MAX_INDEX_BYTES", 128 * 1024 * 1024))
+    classification_rules: str = os.environ.get("LOG_CLASSIFICATION_RULES", "[]")

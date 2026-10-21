@@ -9,7 +9,8 @@ import tarfile
 import uuid
 
 from .archive import Cancelled, ImportFailure, extract
-from .parsers.bundle import Bundle, discover
+from .parsers.bundle import discover
+from .catalog import IndexedBundle
 
 
 def new_id():
@@ -28,12 +29,13 @@ class Record:
     allocated: int = 0
     unpacked: int = 0
     cancelled: Event = field(default_factory=Event)
-    bundle: Bundle | None = None
+    bundle: IndexedBundle | None = None
 
     def public(self):
-        s = self.bundle.summary if self.bundle else {}
+        s = self.bundle.header if self.bundle else {}
         return {'id': self.id, 'caseId': self.case_id, 'name': self.name, 'state': self.state,
                 'error': self.error, 'receivedBytes': self.received, 'unpackedBytes': self.unpacked,
+                'indexBytes': self.bundle.index_bytes if self.bundle else 0,
                 'hostname': s.get('hostname'), 'generated': s.get('generated'), 'distro': s.get('distro')}
 
 
@@ -128,13 +130,17 @@ class Store:
             roots = discover(destination)
             if len(roots) != 1:
                 raise ImportFailure('未找到唯一采集根目录，请将各节点采集包分别上传')
-            bundle = Bundle(roots[0])
+            record.state = 'indexing'
+            self.reserve(record, self.settings.index_limit)
+            bundle = IndexedBundle(roots[0], record.folder / 'metadata.sqlite', self.settings.index_limit,
+                                   self.settings.classification_rules, record.cancelled)
             with self.lock:
                 if record.cancelled.is_set():
                     raise Cancelled('导入已取消')
                 (record.folder / 'upload.tar.gz').unlink()
-                self.used -= record.received
-                record.allocated -= record.received
+                released = record.received + self.settings.index_limit - bundle.index_bytes
+                self.used -= released
+                record.allocated -= released
                 record.bundle = bundle
                 record.state = 'ready'
         except ImportFailure as exc:

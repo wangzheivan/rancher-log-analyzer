@@ -1,6 +1,6 @@
 image:
   repository: registry.example.com/rancher-log-analyzer/rancher-log-analyzer
-  tag: "0.1.0-20261020-03"
+  tag: "0.2.0-20261021-01"
   pullPolicy: IfNotPresent
 imagePullSecrets: []
 service:
@@ -13,6 +13,9 @@ limits:
   sessionBytes: "10737418240"
   archiveFiles: "20000"
   archiveDepth: "32"
+  indexBytes: "134217728"
+# Explicit rules precede built-in rules; no regex execution.
+logClassificationRules: []
 emptyDirSize: 12Gi
 resources:
   requests:

@@ -4,7 +4,7 @@
 
 React + TypeScript / FastAPI，单进程临时共享工作区。**所有访问者共用案例，服务重启会清空上传数据。** 当前版本不提供账户、自动诊断、AI 分析、跨包合并和时间对比。
 
-原始采集日志不包含在 GitHub 仓库中。真实样本测试和浏览器验收需要自行提供采集包；不含样本时，相关后端样本测试会跳过。
+原始采集日志不包含在 GitHub 仓库中。浏览器回归使用可生成的合成采集包；不含原始样本时，相关后端真实样本测试会跳过。
 
 ## WSL 本地运行
 
@@ -38,7 +38,7 @@ docker login registry.example.com
 export KUBE_CONTEXT=your-cluster-context
 export IMAGE_REPOSITORY=registry.example.com/your-project/rancher-log-analyzer
 kubectl config use-context "$KUBE_CONTEXT"
-IMAGE_TAG=0.1.0-20261020-03 bash scripts/deploy.sh
+IMAGE_TAG=0.2.0-20261021-01 bash scripts/deploy.sh
 ```
 
 脚本检查 Deployment 和 Service 的 Helm 归属，构建镜像、推送 Harbor，再在 显式指定的 `KUBE_CONTEXT` 上下文安装/更新独立命名空间中的同名 Release：`rancher-log-analyzer`。每次代码更新使用新的 `IMAGE_TAG`。
@@ -63,7 +63,7 @@ IMAGE_TAG=<新的镜像版本> bash scripts/deploy.sh \
 
 镜像能否匿名拉取取决于目标仓库配置；私有项目需要配置对应的拉取凭据。应用不挂载 Kubernetes ServiceAccount 凭据，不读取实时集群数据；kubectl 仅用于安装与验收。
 
-Chart 配置位于 `charts/rancher-log-analyzer/values.yaml`：默认 NodePort `30080`、单副本、Recreate 策略、非 root 用户、只读根文件系统、健康探针、`emptyDir` 12 GiB、内存限制 1 GiB。不依赖 PVC 或 StorageClass。**不要增加副本数或 Uvicorn worker 数**，当前会话状态为单进程内存数据。升级也会重置案例。
+Chart 配置位于 `charts/rancher-log-analyzer/values.yaml`：默认 NodePort `30080`、单副本、Recreate 策略、非 root 用户、只读根文件系统、健康探针、`emptyDir` 12 GiB、内存限制 1 GiB。不依赖 PVC 或 StorageClass。**不要增加副本数或 Uvicorn worker 数**，案例与任务状态保存在单进程内存，资源元数据保存于临时 SQLite。升级也会重置案例。
 
 临时文件仅写入 `DATA_DIR/session`。启动时清空这个专用子目录，不删除 `DATA_DIR` 其他内容。不要把原始采集数据放在该子目录内。
 
@@ -79,15 +79,15 @@ Chart 配置位于 `charts/rancher-log-analyzer/values.yaml`：默认 NodePort `
 | `DATA_DIR` | `/tmp/rancher-log-analyzer`；容器 `/data` | 固定挂载 `/data` |
 | `FRONTEND_DIR` | `frontend/dist`；容器 `/app/frontend/dist` | 镜像内置 |
 
-会话配额统计上传暂存文件和已解压文件的实际内容字节；导入成功后删除压缩包，失败、取消和删除会释放空间。归档路径穿越、绝对路径、链接、特殊文件、重复路径、过大扩展头及 gzip 完整性错误会被拒绝。归档解压流另有上限，避免过量填充与扩展元数据。
+会话配额统计上传暂存文件、已解压文件和元数据索引的实际内容字节；导入成功后删除压缩包，失败、取消和删除会释放空间。归档路径穿越、绝对路径、链接、特殊文件、重复路径、过大扩展头及 gzip 完整性错误会被拒绝。归档解压流另有上限，避免过量填充与扩展元数据。
 
 - 主机内存、磁盘和负载只属于当前采集节点；其他节点的容量来自 Node 对象，不等于使用量。
 - 每个采集包的集群快照保持独立。etcd 输出只代表采集到的端点；缺失数据不推断为健康。
 - Completed 不计为异常 Pod；历史重启次数只展示，不直接判为当前故障。
 - 当前样本验证了 RKE2；K3s、RKE、kubeadm 按相应目录布局发现数据，尚未经过这些发行版真实样本验收。
-- 结构化资源表每个预览最多读取 256 KiB，累计预算 16 MiB；超出预算会提示查看原文。主机与 etcd 卡片原文各预览 8 KiB，完整内容从“查看原文”读取。
+- 新页面从增量解析的完整元数据索引分页查询，不沿用旧资源预览截断。单个 JSON 对象上限4 MiB、字符串上限256 KiB、嵌套最多64层；无法完整解析会提示并使用可用文本回退。主机与 etcd 卡片原文各预览 8 KiB，完整内容从“查看原文”读取。
 - 文件内容每次最多扫描 2 MiB、返回 250 条，长行按最多 64 KiB 分段，支持跨分段和跨读取页的关键字匹配。无匹配但还有内容时可继续搜索。二进制文件仅展示元信息；非法 UTF-8 字节使用替换字符。
-- 首屏仅请求摘要、结构化数据和文件索引，不载入 Pod、journald 等完整日志；单文件搜索不建立全文索引。
+- 首屏仅请求轻量概览，文件与资源目录按页查询，不载入 Pod、journald 等完整日志；单文件搜索不建立全文索引。
 
 ## API 与扩展
 
@@ -99,14 +99,14 @@ API 前缀 `/api/v1`；接口定义可通过 `/openapi.json` 查看，无外部 
 | `GET/POST /cases`、`PATCH/DELETE /cases/{id}` | 案例管理 |
 | `POST /cases/{id}/bundles?filename=node.tar.gz` | 原始二进制请求体流式上传，响应 202 |
 | `GET/DELETE /bundles/{id}` | 导入状态或删除/取消 |
-| `GET /bundles/{id}/summary` | 当前包摘要与文件索引 |
+| `GET /bundles/{id}/summary` | 旧兼容全量摘要，常规页面不使用 |
 | `GET /bundles/{id}/nodes`、`/pods` | 结构化节点与 Pod |
 | `GET /bundles/{id}/resources/{name}` | 资源表与原文来源 |
 | `GET /bundles/{id}/files/{fileId}?offset=0&q=error` | 文件分块读取与单文件搜索 |
 
-文件标识由摘要索引提供，客户端不能指定服务端文件路径。导入状态为 `uploading → queued → extracting → parsing → ready`，失败为 `failed`；删除执行取消并清理。
+文件标识由分页目录索引提供，客户端不能指定服务端文件路径。导入状态为 `uploading → queued → extracting → parsing → indexing → ready`，失败为 `failed`；删除执行取消并清理。
 
-解析与浏览逻辑位于 `backend/parsers`，导入安全处理位于 `backend/archive.py`，会话与任务管理位于 `backend/store.py`。后续诊断规则可消费解析结果与来源路径，不需要将 UI 与分析逻辑耦合。
+元数据目录逻辑位于 `backend/catalog.py`，格式解析位于 `backend/parsers`，导入安全处理位于 `backend/archive.py`，会话与任务管理位于 `backend/store.py`。后续诊断规则可消费解析结果与来源路径，不需要将 UI 与分析逻辑耦合。
 
 ## 测试
 
@@ -120,18 +120,19 @@ helm template rancher-log-analyzer charts/rancher-log-analyzer >/tmp/rancher-log
 cd frontend
 npx playwright install --with-deps chromium
 cd ..
-python3 scripts/package-sample.py --source /path/to/extracted-bundle
+python3 scripts/make-scale-fixture.py
 python3 scripts/make-test-fixture.py
 # 保持本地后端在 8080 运行，另开 WSL 终端
 npm --prefix frontend run test:e2e
 ```
 
-浏览器测试创建、重命名并删除自己创建的案例；建议在空白测试工作区运行。真实样本测试只在项目存在原始样本目录时执行，否则跳过。截图写入 `artifacts/`；失败保留 Playwright trace。
+浏览器测试创建并删除自己创建的合成案例；建议在空白测试工作区运行。真实样本测试只在项目存在原始样本目录时执行，否则跳过。截图写入 `artifacts/`；失败保留 Playwright trace。
 
-在实际集群运行同样的浏览器验收：
+在恢复后的实际工作区运行只读浏览器验收（预期日志数按复现包调整）：
 
 ```bash
-E2E_BASE_URL=http://192.0.2.10:30080 npm --prefix frontend run test:e2e
+EXISTING_WORKSPACE=1 EXPECTED_NESTED_LOGS=8 E2E_BASE_URL=http://192.0.2.10:30080 \
+  npm --prefix frontend run test:e2e -- reproduction.spec.ts
 ```
 
 重启清空验证在空白验收工作区中执行：
@@ -144,3 +145,89 @@ E2E_BASE_URL=http://192.0.2.10:30080 npm --prefix frontend run test:e2e
 脚本创建自己的验收案例并上传真实样本，通过终止应用进程触发同一个 Pod 内的容器重启，验证 emptyDir 仍在时旧会话也被清空。工作区已有案例时拒绝执行，完成后可再导入演示数据。
 
 官方采集器：[使用说明](https://github.com/rancherlabs/support-tools/tree/master/collection/rancher/v2.x/logs-collector)、[采集范围](https://github.com/rancherlabs/support-tools/blob/master/collection/rancher/v2.x/logs-collector/collection-details.md)。
+
+## 0.2 展示增强与分页索引
+
+Pod 工作负载的日志按钮跳转到独立 Pod 日志页。命名空间和 Pod 候选项由服务端搜索，每页50项；默认只列有采集日志的对象，也可以包含无日志 Pod。已从资源快照消失的 Pod 按日志中的 UID 单独保留。“未关联日志”展示无法唯一识别归属的文件。业务日志、系统/平台日志与未分类日志可分别筛选。
+
+支持官方扁平 `命名空间-Pod`、`-previous` 文件，以及 `命名空间_Pod_UID/容器/实例号.log` 和未压缩轮转文件。扁平文件依据清单唯一匹配，容器不明确时显示“合并日志”；嵌套文件保留 UID、容器与实例号，默认选较大实例号，不将其推断为实时运行实例。旧 UID 不关联到同名新 Pod。压缩或二进制源文件只展示位置与元信息。
+
+日志默认从末尾读取最多250条；支持开头、末尾、前后读取和不区分大小写的单文件搜索。每次最多扫描2 MiB，无匹配时可以沿游标继续。超长行分段标识，不在浏览器累积完整日志，不建立全文索引。组件日志页复用同一阅读器，按节点、组件或文件名筛选。
+
+Pod / Node 详情优先读取 JSON，使用 Describe 的对象区间补充。详情包含容器和 Init Container、镜像、探针、资源请求/限制、挂载、调度及 Conditions（以采集内容为准）。未提供的字段明确标记；详情原文入口从对应对象区间开始读取。Node 的关联 Pod 按页加载。详情返回保留 URL 中的列表筛选和分页；关联事件优先按 UID，只有名称时明确标注，原始相对时间不转换为绝对时间。
+
+采集完整性按资源、详情与事件、Pod 日志、组件日志、主机、网络、etcd 和配置分类。状态区分已采集、有效无数据、部分可用、失败、未发现、不适用和无法判断；不适用需有采集输出依据，未发现不会解释为不适用或健康。Pod 日志覆盖数量不等于健康率。
+
+元数据保存于每包独立的临时 SQLite 数据库；JSON 增量读取、文本按行处理，不使用旧预览截断内容作索引。导入失败不会把不完整清单报告为完整。原始采集内容不修改。数据库、解压文件和上传临时文件均计入会话配额。索引预留默认128 MiB，成功后按实际大小结算；超过预算导入失败并清理。仍然要求单进程和串行导入。
+
+新增环境变量：
+
+| 变量 | 默认值 | 用途 |
+| --- | --- | --- |
+| `MAX_INDEX_BYTES` | `134217728` | 每包元数据索引预算 |
+| `LOG_CLASSIFICATION_RULES` | `[]` | 日志分类规则 JSON 数组 |
+
+显式分类规则优先于内置规则，同一规则中条件为 AND、规则按顺序匹配，使用精确命名空间和名称前缀，避免运行自定义正则表达式：
+
+```bash
+docker run -d --name rancher-log-analyzer -p 8080:8080 \
+  --cpus=2 --memory=1g \
+  -e MAX_INDEX_BYTES=134217728 \
+  -e LOG_CLASSIFICATION_RULES='[{"namespace":"platform","scope":"system"},{"podPrefix":"shop-","scope":"business"}]' \
+  rancher-log-analyzer:local
+```
+
+Helm 中使用 `limits.indexBytes` 和 `logClassificationRules`：
+
+```yaml
+limits:
+  indexBytes: "134217728"
+logClassificationRules:
+  - namespace: platform
+    scope: system
+  - componentPrefix: kubelet
+    scope: system
+```
+
+### 新分页接口
+
+`GET /api/v1/bundles/{id}/overview` 只返回有上限的概览；常规页面和案例轮询不调用旧全量摘要接口。
+
+`GET /api/v1/bundles/{id}/catalog/{kind}` 支持 `pods`、`nodes`、`namespaces`、`logPods`、`logs`、`components`、`events`、`resources`、`files`。返回 `items、total、nextCursor、previousCursor`；默认50条、最多200条。游标绑定筛选条件，改变条件后从首页查询。支持 `q、namespace、node、status、scope、component、resource、pod、name、object_kind、object_name、object_uid、has_logs`，按类别适用。`pod=unassociated` 查询未关联日志。
+
+`GET /api/v1/bundles/{id}/detail/{pods|nodes}/{entityId}` 返回摘要、结构化对象与 Describe 来源区间。
+
+`GET /api/v1/bundles/{id}/completeness` 返回完整性分组及有上限的来源示例。
+
+`GET /api/v1/bundles/{id}/files/{fileId}` 支持 `direction=forward|backward`、`anchor=start|end`、`offset`、`end`、`q`；返回双向字节游标。文件必须先通过索引定位，禁止任意路径访问。旧只读接口保留兼容，只有主动调用时才组装完整结果。
+
+### 可重复验收
+
+```bash
+python3 scripts/make-scale-fixture.py
+python3 scripts/make-test-fixture.py
+# 启动专用测试容器；不要对正在使用的容器执行测试清理。
+docker run -d --name rancher-validation --cpus=2 --memory=1g \
+  -p 127.0.0.1:18080:8080 rancher-log-analyzer:local
+python3 scripts/accept-scale.py
+E2E_BASE_URL=http://127.0.0.1:18080 npm run test:e2e --prefix frontend
+docker rm -f rancher-validation
+```
+
+规模脚本创建合成案例并在完成后删除。测量结果写入 Git 忽略的 `artifacts/`。浏览器测试使用合成采集包，截图与 trace 也不提交。
+
+### 升级前备份
+
+服务仍使用共享临时会话；升级会清空数据。可先将现有案例和采集根目录导出到 Git 忽略目录，再升级并重导入：
+
+```bash
+python3 scripts/backup-workspace.py --context "$KUBE_CONTEXT" \
+  --base-url "http://<节点IP>:30080" --output .data/upgrade-backup
+# 执行升级，确认服务为空工作区后：
+python3 scripts/restore-workspace.py --base-url "http://<节点IP>:30080" \
+  --input .data/upgrade-backup
+```
+
+备份脚本匹配采集根目录时若存在歧义会停止；恢复脚本仅允许恢复到空工作区。备份包含原始采集数据，必须保留在私有本地目录。它不改变临时会话模式。
+
+分类路径依据 [Rancher 官方采集脚本](https://github.com/rancherlabs/support-tools/blob/master/collection/rancher/v2.x/logs-collector/rancher2_logs_collector.sh)。官方脚本的扁平日志来自 `kubectl logs --all-containers`，本地 CRI 目录用于 Agent/API 不可用等采集分支；页面不把这些来源解释为实时集群信息。
