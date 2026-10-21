@@ -38,10 +38,10 @@ docker login registry.example.com
 export KUBE_CONTEXT=your-cluster-context
 export IMAGE_REPOSITORY=registry.example.com/your-project/rancher-log-analyzer
 kubectl config use-context "$KUBE_CONTEXT"
-IMAGE_TAG=0.2.0-20261021-01 bash scripts/deploy.sh
+IMAGE_TAG="0.2.1-$(date +%Y%m%d-%H%M%S)" bash scripts/deploy.sh
 ```
 
-脚本检查 Deployment 和 Service 的 Helm 归属，构建镜像、推送 Harbor，再在 显式指定的 `KUBE_CONTEXT` 上下文安装/更新独立命名空间中的同名 Release：`rancher-log-analyzer`。每次代码更新使用新的 `IMAGE_TAG`。
+脚本检查 Deployment 和 Service 的 Helm 归属，构建镜像、推送 Harbor，再在 显式指定的 `KUBE_CONTEXT` 上下文安装/更新独立命名空间中的同名 Release：`rancher-log-analyzer`。每次代码更新使用新的 `IMAGE_TAG`。发布时先推送具体版本，再将同一镜像推送为 `latest`；每次覆盖 `latest`，具体版本标签保持唯一、不重复覆盖。`IMAGE_TAG` 不允许填写 `latest`。Helm 继续引用具体版本；Docker 使用 `latest` 时，更新前先执行 `docker pull <仓库/镜像>:latest`，再重建容器。
 
 镜像仓库通过 `IMAGE_REPOSITORY` 指定；文档中的 `registry.example.com` 和 `192.0.2.10` 为示例占位地址，需要替换为自己的环境配置。镜像构建上下文白名单只包含应用源代码与依赖清单，排除采集日志、测试产物和凭据。
 

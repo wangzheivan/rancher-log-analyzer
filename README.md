@@ -42,7 +42,7 @@ kubectl config use-context "$KUBE_CONTEXT"
 
 ### 构建镜像并部署
 
-脚本会构建、推送镜像，并通过 Helm 安装或更新应用：
+脚本会构建并推送两个标签：唯一的具体版本（如 `0.2.1-20261021-165252`）和 `latest`。每次发布都会覆盖 `latest`，具体版本标签保留。Helm 使用具体版本部署，便于核验和回滚：
 
 ```bash
 docker login registry.example.com
