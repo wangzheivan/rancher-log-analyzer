@@ -181,7 +181,7 @@ export function App() {
     try {
       for (const file of Array.from(files)) {
         if (!/\.(tar\.gz|tgz)$/i.test(file.name))
-          throw Error("仅支持 .tar.gz 或 .tgz");
+          throw Error(`文件“${file.name}”不支持，仅支持 .tar.gz 或 .tgz`);
         if (session && file.size > session.maxUploadBytes)
           throw Error("压缩包大小超过限制");
         setUpload({ name: file.name, progress: 0 });
@@ -354,11 +354,14 @@ export function App() {
               ref={fileInput}
               type="file"
               multiple
-              accept=".tar.gz,.tgz"
+              aria-describedby="upload-format-hint"
               aria-label="上传采集包文件"
               onChange={(e) => void send(e.target.files)}
             />
           </div>
+          <p id="upload-format-hint" className="upload-format-hint">
+            支持 .tar.gz / .tgz，请选择未解压的原始采集包。
+          </p>
           {current && (
             <div className="package-toggle">
               <button

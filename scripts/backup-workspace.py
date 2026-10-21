@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 import subprocess
 import urllib.request
+from backup_helpers import select_backup_root
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--context", required=True)
@@ -45,11 +46,23 @@ def get(path):
 
 
 cases = get("/cases")
-remote = """import json; from pathlib import Path
+remote = """import json,hashlib; from pathlib import Path
 roots=set()
 for marker in ('collector-output.log','summary.txt'):
  for p in Path('/data/session').glob('*/files/**/'+marker):roots.add(p.parent)
-print(json.dumps([{'name':str(p.name),'path':str(p),'files':len([f for f in p.rglob('*') if f.is_file()])} for p in roots]))
+result=[]
+for root in sorted(roots):
+ inventory=[];fingerprint=hashlib.sha256()
+ for path in sorted(root.rglob('*')):
+  if path.is_symlink():raise ValueError('Unexpected symlink in collected data')
+  if not path.is_file():continue
+  size=path.stat().st_size;relative=path.relative_to(root).as_posix();digest=hashlib.sha256()
+  with path.open('rb') as stream:
+   while chunk:=stream.read(1024*1024):digest.update(chunk)
+  inventory.append([relative,size])
+  fingerprint.update(json.dumps([relative,size,digest.hexdigest()],ensure_ascii=True).encode()+b'\\n')
+ result.append({'name':root.name,'path':str(root),'inventory':inventory,'fingerprint':fingerprint.hexdigest()})
+print(json.dumps(result))
 """
 roots = json.loads(
     subprocess.check_output(command + ["exec", pod, "--", "python", "-c", remote])
@@ -61,21 +74,15 @@ for case in cases:
         if record["state"] != "ready":
             raise SystemExit("Only ready bundles can be backed up safely")
         summary = get("/bundles/" + record["id"] + "/summary")
-        matches = [
-            r
-            for r in roots
-            if r["name"] == summary["name"] and r["files"] == len(summary["files"])
-        ]
-        if len(matches) != 1:
-            raise SystemExit(
-                "Bundle root ambiguous; preserve the workspace before upgrading"
-            )
+        try:
+            matched = select_backup_root(roots, summary)
+        except ValueError as exc:
+            raise SystemExit(str(exc)) from exc
         archive = record["id"] + ".tar.gz"
         script = "import sys,tarfile; from pathlib import Path; p=Path(sys.argv[1]); t=tarfile.open(fileobj=sys.stdout.buffer,mode='w|gz'); t.add(p,arcname=p.name); t.close()"
         with (output / archive).open("wb") as stream:
             subprocess.run(
-                command
-                + ["exec", pod, "--", "python", "-c", script, matches[0]["path"]],
+                command + ["exec", pod, "--", "python", "-c", script, matched["path"]],
                 stdout=stream,
                 check=True,
             )
@@ -85,6 +92,7 @@ for case in cases:
                 "archive": archive,
                 "oldId": record["id"],
                 "files": len(summary["files"]),
+                "contentSha256": matched["fingerprint"],
             }
         )
     manifest["cases"].append(saved)

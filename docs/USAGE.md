@@ -228,7 +228,7 @@ python3 scripts/restore-workspace.py --base-url "http://<节点IP>:30080" \
   --input .data/upgrade-backup
 ```
 
-备份脚本匹配采集根目录时若存在歧义会停止；恢复脚本仅允许恢复到空工作区。备份包含原始采集数据，必须保留在私有本地目录。它不改变临时会话模式。
+备份脚本匹配完整文件清单；同名目录重复时，只有全部文件内容 SHA256 一致才视为可互换副本，否则停止升级。每个案例及采集包仍分别保留记录；恢复脚本仅允许恢复到空工作区。备份包含原始采集数据，必须保留在私有本地目录。它不改变临时会话模式。
 
 分类路径依据 [Rancher 官方采集脚本](https://github.com/rancherlabs/support-tools/blob/master/collection/rancher/v2.x/logs-collector/rancher2_logs_collector.sh)。官方脚本的扁平日志来自 `kubectl logs --all-containers`，本地 CRI 目录用于 Agent/API 不可用等采集分支；页面不把这些来源解释为实时集群信息。
 
@@ -264,3 +264,11 @@ UX_ARCHIVE=/path/to/private-bundle.tar.gz E2E_BASE_URL=http://127.0.0.1:18080 \
 ```
 
 测试只删除自己创建的案例。真实包、备份、界面截图和部署参数不得提交公开仓库。
+
+## macOS 文件选择兼容
+
+文件选择窗口不再使用复合扩展名 `accept` 过滤，以避免 macOS Chrome / Edge 原生类型匹配把合法 `.tar.gz` 文件置灰。窗口会显示所有文件，选择后仍只接受 `.tar.gz` / `.tgz`（扩展名不区分大小写），并校验上传大小；错误格式提示具体文件名，不发送请求。不依赖浏览器给出的 MIME 类型。
+
+请选择未解压的原始采集包；`.tar` 和文件夹仍不支持。后端的 gzip/tar 内容验证、解包安全和配额限制继续生效，改后缀不能绕过校验。
+
+WSL 浏览器自动化覆盖选择后的上传与校验，不能代替 macOS 原生文件选择器验收。部署后需要在 Mac Chrome / Edge 中点击“上传采集包”，确认原包可选并完成上传。

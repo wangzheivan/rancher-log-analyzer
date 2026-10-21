@@ -35,7 +35,7 @@ def create_app(settings=None):
         yield
         store.close()
 
-    app = FastAPI(title='Rancher Log Explorer', version='0.2.1', lifespan=lifespan,
+    app = FastAPI(title='Rancher Log Explorer', version='0.2.2', lifespan=lifespan,
                   docs_url=None, redoc_url=None)
     app.state.store = store
 
@@ -57,7 +57,7 @@ def create_app(settings=None):
 
     @app.get('/api/v1/health')
     def health():
-        return {'status': 'ok', 'mode': 'ephemeral', 'version': '0.2.1'}
+        return {'status': 'ok', 'mode': 'ephemeral', 'version': '0.2.2'}
 
     @app.get('/api/v1/session')
     def session():

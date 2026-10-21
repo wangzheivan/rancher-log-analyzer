@@ -8,6 +8,8 @@ Rancher 官方日志采集包的中文可视化工具，支持：
 - 查看采集完整性；SQLite 临时索引支持大规模清单的服务端分页。
 - 按用途分类和原始目录浏览文件，分块读取大日志并搜索关键字。
 
+上传时请选择未解压的 `.tar.gz` / `.tgz` 原始采集包。文件选择窗口显示所有文件，选择后会校验格式。
+
 详细的本地开发、配置、API 和测试说明见 [使用与开发说明](docs/USAGE.md)。
 
 ## Docker 部署
@@ -36,13 +38,13 @@ docker run -d \
 ```bash
 export KUBE_CONTEXT="your-cluster-context"
 export IMAGE_REPOSITORY="registry.example.com/your-project/rancher-log-analyzer"
-export IMAGE_TAG="0.2.1-$(date +%Y%m%d-%H%M%S)"
+export IMAGE_TAG="0.2.2-$(date +%Y%m%d-%H%M%S)"
 kubectl config use-context "$KUBE_CONTEXT"
 ```
 
 ### 构建镜像并部署
 
-脚本会构建并推送两个标签：唯一的具体版本（如 `0.2.1-20261021-165252`）和 `latest`。每次发布都会覆盖 `latest`，具体版本标签保留。Helm 使用具体版本部署，便于核验和回滚：
+脚本会构建并推送两个标签：唯一的具体版本（如 `0.2.2-20261021-180000`）和 `latest`。每次发布都会覆盖 `latest`，具体版本标签保留。Helm 使用具体版本部署，便于核验和回滚：
 
 ```bash
 docker login registry.example.com
