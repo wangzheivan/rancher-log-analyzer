@@ -2,6 +2,7 @@
 from pathlib import Path, PurePosixPath
 import tarfile
 import gzip
+import re
 
 class ImportFailure(ValueError):
     pass
@@ -50,7 +51,7 @@ def extract(archive, destination, settings, reserve, cancelled):
                 name = PurePosixPath(member.name)
                 if count > settings.max_files:
                     raise ImportFailure('归档条目数量超过限制')
-                if name.is_absolute() or '..' in name.parts or '\\' in member.name or ':' in member.name or len(name.parts) > settings.max_depth:
+                if name.is_absolute() or '..' in name.parts or '\\' in member.name or any(re.match(r'^[A-Za-z]:', part) for part in name.parts) or len(name.parts) > settings.max_depth:
                     raise ImportFailure('归档含不安全路径或目录过深')
                 if not (member.isdir() or member.isreg()) or member.issparse():
                     raise ImportFailure('归档含链接、特殊文件或稀疏文件')

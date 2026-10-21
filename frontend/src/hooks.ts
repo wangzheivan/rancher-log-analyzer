@@ -41,7 +41,15 @@ export function useLocation() {
     if (target) write(new URLSearchParams(target));
     else go("pods");
   }
-  return { params, set, go, back };
+  function selectScope(values: Record<string, string>) {
+    const next = new URLSearchParams();
+    for (const key of ["case", "bundle", "page"]) {
+      const value = values[key] ?? params.get(key);
+      if (value) next.set(key, value);
+    }
+    write(next);
+  }
+  return { params, set, go, back, selectScope };
 }
 export type Navigation = ReturnType<typeof useLocation>;
 export function useDebounced<T>(value: T, delay = 250) {

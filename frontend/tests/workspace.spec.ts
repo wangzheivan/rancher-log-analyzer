@@ -94,18 +94,18 @@ test("大规模分页、Pod日志、详情返回、事件、分类和原文安�
       .getByRole("navigation")
       .getByRole("button", { name: "集群节点", exact: true })
       .click();
-    await expect(page.locator("tbody tr")).toHaveCount(50);
+    await expect(page.locator(".node-grid>.panel")).toHaveCount(12);
     await page.getByRole("button", { name: "下一页", exact: true }).click();
     await expect(
-      page.getByRole("button", { name: "node-050", exact: true }),
+      page.getByRole("button", { name: "node-012", exact: true }),
     ).toBeVisible();
-    await page.getByRole("button", { name: "node-050", exact: true }).click();
+    await page.getByRole("button", { name: "node-012", exact: true }).click();
     await expect(
       page.getByRole("heading", { name: "Node 详情", exact: true }),
     ).toBeVisible();
     await page.getByRole("button", { name: "← 返回并恢复列表" }).click();
     await expect(
-      page.getByRole("button", { name: "node-050", exact: true }),
+      page.getByRole("button", { name: "node-012", exact: true }),
     ).toBeVisible();
     await page.screenshot({
       path: "../artifacts/workspace.png",

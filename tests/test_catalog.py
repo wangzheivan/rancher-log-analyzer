@@ -349,3 +349,125 @@ def test_reverse_search_across_scan_windows(tmp_path):
         first["scannedBytes"] <= 2 * 1024 * 1024
         and second["scannedBytes"] <= 2 * 1024 * 1024
     )
+
+
+def test_file_groups_directories_and_resource_tables(tmp_path):
+    root = tmp_path / "files"
+    write(root, "summary.txt", "Hostname: node1")
+    write(root, "etcd/etcd-metrics-127.0.0.1:2381.txt", "metric 1")
+    write(
+        root,
+        "rke2/kubectl/nodes",
+        "NAME   STATUS   ROLES    INTERNAL-IP   VERSION\nnode1  Ready    worker   192.0.2.9     v1.34\n",
+    )
+    write(
+        root,
+        "rke2/kubectl/nodes.json",
+        {
+            "items": [
+                {
+                    "metadata": {"name": "node1"},
+                    "status": {
+                        "addresses": [{"type": "InternalIP", "address": "192.0.2.9"}]
+                    },
+                }
+            ]
+        },
+    )
+    write(
+        root,
+        "rke2/kubectl/pods.json",
+        {
+            "items": [
+                {
+                    "metadata": {"name": "app", "namespace": "apps"},
+                    "spec": {"nodeName": "node1"},
+                }
+            ]
+        },
+    )
+    write(
+        root,
+        "rke2/kubectl/services",
+        "NAMESPACE  NAME  CLUSTER-IP\nother      svc   192.0.2.10\n",
+    )
+    write(
+        root,
+        "rke2/kubectl/poddescribe/empty-namespace",
+        "No resources found in empty-namespace namespace.\n",
+    )
+    write(
+        root, "rke2/kubectl/poddescribe/described", "Name: app2\nNamespace: described\n"
+    )
+    b = IndexedBundle(root, tmp_path / "meta.sqlite")
+    assert b.catalog("nodes", q="192.0.2.9")["items"][0]["podCount"] == 1
+    assert {r["name"] for r in b.catalog("namespaces")["items"]} == {
+        "apps",
+        "other",
+        "described",
+    }
+    groups = b.catalog("fileGroups")["items"]
+    assert sum(g["count"] for g in groups) == b.overview["counts"]["files"]
+    assert sum(g["bytes"] for g in groups) == b.overview["bytes"]
+    assert b.catalog("files", group="etcd")["total"] == 1
+    dirs = b.catalog("fileDirectories", directory="rke2", group="resources")["items"]
+    assert dirs[0]["name"] == "kubectl"
+    assert b.catalog("files", directory="rke2/kubectl", group="resources")["total"] == 4
+    assert b.catalog("files", directory="rke2/kubectl/pod")["total"] == 0
+    with pytest.raises(ValueError):
+        b.catalog("fileDirectories", directory="../escape")
+    table = b.catalog("resources", resource="nodes")
+    assert table["source"].endswith("/nodes") and table["columns"] == [
+        "NAME",
+        "STATUS",
+        "ROLES",
+        "INTERNAL-IP",
+        "VERSION",
+    ]
+    assert table["items"][0]["INTERNAL-IP"] == "192.0.2.9"
+    assert b.catalog("resources", resource="services", q="192.0.2.10")["total"] == 1
+
+
+def test_namespace_search_beyond_first_page(tmp_path):
+    root = tmp_path / "files"
+    write(root, "summary.txt", "Hostname: test")
+    write(
+        root,
+        "rke2/kubectl/namespaces.json",
+        {"items": [{"metadata": {"name": f"ns-{i:03d}"}} for i in range(101)]},
+    )
+    b = IndexedBundle(root, tmp_path / "meta.sqlite")
+    first = b.catalog("namespaces")
+    assert first["total"] == 101 and len(first["items"]) == 50
+    assert first["items"][0]["name"] == "ns-000"
+    second = b.catalog("namespaces", cursor=first["nextCursor"])
+    third = b.catalog("namespaces", cursor=second["nextCursor"])
+    assert third["items"][0]["name"] == "ns-100"
+    assert b.catalog("namespaces", q="ns-100")["total"] == 1
+
+
+def test_linux_colon_filename_and_drive_rejection(client):
+    from conftest import make_archive, upload
+
+    good = upload(
+        client,
+        make_archive(
+            {
+                "summary.txt": "Hostname: test",
+                "etcd/etcd-metrics-127.0.0.1:2381.txt": "ok",
+            }
+        ),
+    )
+    assert good["state"] == "ready"
+    for name in ["C:relative", "outer/C:/escape", "C:/absolute"]:
+        bad = upload(
+            client, make_archive({"summary.txt": "Hostname: test", name: "bad"})
+        )
+        assert bad["state"] == "failed"
+
+
+def test_collector_metadata_classification():
+    from backend.file_catalog import file_group
+
+    assert file_group("collector-output.log") == "metadata"
+    assert file_group("rke2/agent-logs/kubelet.log") == "components"

@@ -59,6 +59,10 @@ export interface PageData<T = Item> {
   nextCursor: string | null;
   previousCursor?: string | null;
   source?: string;
+  columns?: string[];
+  state?: string;
+  note?: string;
+  bytes?: number;
 }
 export interface Overview {
   name: string;

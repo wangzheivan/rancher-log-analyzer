@@ -3,10 +3,10 @@
 Rancher 官方日志采集包的中文可视化工具，支持：
 
 - 按案例管理多个节点的采集包，上传 `.tar.gz` / `.tgz` 文件。
-- 展示概览、Pod / Node 详情、关联事件、Kubernetes 资源及主机与 etcd 信息。
+- 案例内采集包管理、可搜索的节点卡片、Pod / Node 详情、关联事件与资源快照。
 - 独立 Pod 日志页支持命名空间与 Pod 搜索、容器实例选择；组件日志与业务日志分类展示。
 - 查看采集完整性；SQLite 临时索引支持大规模清单的服务端分页。
-- 按目录浏览原始文件，分块读取大日志并搜索关键字。
+- 按用途分类和原始目录浏览文件，分块读取大日志并搜索关键字。
 
 详细的本地开发、配置、API 和测试说明见 [使用与开发说明](docs/USAGE.md)。
 
@@ -36,7 +36,7 @@ docker run -d \
 ```bash
 export KUBE_CONTEXT="your-cluster-context"
 export IMAGE_REPOSITORY="registry.example.com/your-project/rancher-log-analyzer"
-export IMAGE_TAG="0.2.0-20261021-01"
+export IMAGE_TAG="0.2.1-$(date +%Y%m%d-%H%M%S)"
 kubectl config use-context "$KUBE_CONTEXT"
 ```
 

@@ -50,6 +50,7 @@ export function DetailPage({ bundle, nav, onSource, overview }: PageProps) {
     object_uid: row?.uid || "",
     namespace: kind === "pods" ? row?.namespace || "" : "",
     limit: 10,
+    cursor: nav.params.get("eventCursor") || "",
   });
   const {
     data: pods,
@@ -290,28 +291,7 @@ export function DetailPage({ bundle, nav, onSource, overview }: PageProps) {
               当前包只提供了列表信息，未发现可关联的详细来源。
             </div>
           )}
-          <Panel
-            title="关联事件"
-            action={
-              <button
-                className="link"
-                onClick={() =>
-                  nav.go(
-                    "events",
-                    {
-                      namespace: kind === "pods" ? row.namespace || "" : "",
-                      object_kind: kind === "pods" ? "Pod" : "Node",
-                      object_name: row.name,
-                      object_uid: row.uid || "",
-                    },
-                    true,
-                  )
-                }
-              >
-                浏览全部关联事件 →
-              </button>
-            }
-          >
+          <Panel title="关联事件">
             <Message error={eventError} loading={eventLoading} />
             <div className="table-wrap">
               <table>
@@ -344,6 +324,11 @@ export function DetailPage({ bundle, nav, onSource, overview }: PageProps) {
                 </tbody>
               </table>
             </div>
+            <Pagination
+              data={events}
+              cursor={nav.params.get("eventCursor") || ""}
+              onCursor={(eventCursor) => nav.set({ eventCursor })}
+            />
             {!eventLoading && !events?.items.length && (
               <Empty>
                 当前采集数据未提供可关联事件；这不代表对象没有发生过异常。

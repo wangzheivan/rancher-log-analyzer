@@ -35,7 +35,7 @@ def create_app(settings=None):
         yield
         store.close()
 
-    app = FastAPI(title='Rancher Log Explorer', version='0.2.0', lifespan=lifespan,
+    app = FastAPI(title='Rancher Log Explorer', version='0.2.1', lifespan=lifespan,
                   docs_url=None, redoc_url=None)
     app.state.store = store
 
@@ -57,7 +57,7 @@ def create_app(settings=None):
 
     @app.get('/api/v1/health')
     def health():
-        return {'status': 'ok', 'mode': 'ephemeral', 'version': '0.2.0'}
+        return {'status': 'ok', 'mode': 'ephemeral', 'version': '0.2.1'}
 
     @app.get('/api/v1/session')
     def session():
@@ -134,9 +134,9 @@ def create_app(settings=None):
                 scope: str = Query('', max_length=30), component: str = Query('', max_length=253),
                 resource: str = Query('', max_length=253), pod: str = Query('', max_length=100),
                 object_name: str = Query('', max_length=253), object_kind: str = Query('', max_length=100),
-                object_uid: str = Query('', max_length=100), has_logs: bool = False, name: str = Query('', max_length=253), reason: str = Query('', max_length=253)):
+                object_uid: str = Query('', max_length=100), has_logs: bool = False, name: str = Query('', max_length=253), reason: str = Query('', max_length=253), group: str = Query('', max_length=40), directory: str = Query('', max_length=4096)):
         return store.parsed(bundle_id).catalog(kind, limit, cursor, q, namespace, node, status, scope,
-                                              component, resource, pod, object_name, object_kind, object_uid, has_logs, name, reason)
+                                              component, resource, pod, object_name, object_kind, object_uid, has_logs, name, reason, group, directory)
 
     @app.get('/api/v1/bundles/{bundle_id}/detail/{kind}/{entity_id}')
     def detail(bundle_id: str, kind: str, entity_id: str):

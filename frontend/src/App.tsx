@@ -8,7 +8,6 @@ import {
   Terminal,
   Layers,
   ClipboardCheck,
-  Calendar,
   HardDrive,
   Upload,
   Plus,
@@ -25,6 +24,10 @@ import { BrowsePage } from "./pages/Browse";
 import { OverviewPage, SystemPage } from "./pages/Overview";
 import { LogsPage } from "./pages/Logs";
 import { DetailPage } from "./pages/Detail";
+import { NodesPage } from "./pages/Nodes";
+import { ResourcesPage } from "./pages/Resources";
+import { FilesPage } from "./pages/Files";
+import { BundlePanel } from "./components/BundlePanel";
 import { CompletenessPage } from "./pages/Completeness";
 const pages = [
   ["overview", "采集概览", LayoutDashboard],
@@ -32,8 +35,7 @@ const pages = [
   ["pods", "Pod 工作负载", Boxes],
   ["pod-logs", "Pod 日志", Terminal],
   ["components", "组件日志", Layers],
-  ["events", "事件浏览", Calendar],
-  ["resources", "资源清单", FileText],
+  ["resources", "资源快照", FileText],
   ["system", "主机与 etcd", HardDrive],
   ["completeness", "采集完整性", ClipboardCheck],
   ["files", "原始文件", FileText],
@@ -45,6 +47,16 @@ export function App() {
     caseId = p.get("case") || "",
     bundleId = p.get("bundle") || "",
     page = p.get("page") || "overview";
+  const [manage, setManage] = useState(false),
+    [packagesClosed, setPackagesClosed] = useState(false);
+  useEffect(() => {
+    if (page === "events") nav.go("resources", { resource: "events" });
+  }, [page]);
+  useEffect(() => {
+    setManage(false);
+    setPackagesClosed(false);
+  }, [caseId]);
+  const sourceRequest = useRef<AbortController | null>(null);
   const [cases, setCases] = useState<Case[]>([]),
     [session, setSession] = useState<Session | null>(null),
     [loaded, setLoaded] = useState(false),
@@ -90,12 +102,12 @@ export function App() {
   useEffect(() => {
     if (!loaded) return;
     if (!current) {
-      nav.set(
-        { case: cases[0]?.id || "", bundle: cases[0]?.bundles[0]?.id || "" },
-        true,
-      );
+      nav.selectScope({
+        case: cases[0]?.id || "",
+        bundle: cases[0]?.bundles[0]?.id || "",
+      });
     } else if (!bundle) {
-      nav.set({ bundle: bundles[0]?.id || "" }, true);
+      nav.selectScope({ bundle: bundles[0]?.id || "" });
     }
   }, [cases, caseId, bundleId, loaded]);
   useEffect(() => {
@@ -103,18 +115,24 @@ export function App() {
   }, [modal]);
   useEffect(() => {
     setViewer(null);
+    sourceRequest.current?.abort();
+    return () => sourceRequest.current?.abort();
   }, [bundleId]);
   const { data: overview, error: overviewError } = useApi<Overview>(
     bundle?.state === "ready" ? `/bundles/${bundleId}/overview` : null,
   );
   async function source(path: string, offset = 0) {
+    sourceRequest.current?.abort();
+    const controller = new AbortController();
+    sourceRequest.current = controller;
     try {
       const f = await api<Item>(
         `/bundles/${bundleId}/file-source?path=${encodeURIComponent(path)}`,
+        { signal: controller.signal },
       );
-      setViewer({ id: f.id, offset });
+      if (!controller.signal.aborted) setViewer({ id: f.id, offset });
     } catch (e) {
-      setError((e as Error).message);
+      if (!controller.signal.aborted) setError((e as Error).message);
     }
   }
   async function save(e: React.FormEvent) {
@@ -129,7 +147,7 @@ export function App() {
         },
       );
       await refresh();
-      nav.set({ case: c.id, bundle: modal === "rename" ? bundleId : "" });
+      if (modal !== "rename") nav.selectScope({ case: c.id, bundle: "" });
       setModal(null);
     } catch (e) {
       setError((e as Error).message);
@@ -268,7 +286,7 @@ export function App() {
                 aria-label="选择案例"
                 value={caseId}
                 onChange={(e) =>
-                  nav.set({ case: e.target.value, bundle: "", cursor: "" })
+                  nav.selectScope({ case: e.target.value, bundle: "" })
                 }
               >
                 <option value="">选择案例</option>
@@ -280,14 +298,14 @@ export function App() {
               </select>
             </label>
             <button
-              className="ghost"
+              className="primary new-case-button"
               onClick={() => {
                 setName("");
                 setModal("create");
               }}
             >
               <Plus size={15} />
-              创建案例
+              新建案例
             </button>
             <button
               className="icon-button"
@@ -313,15 +331,7 @@ export function App() {
               <select
                 aria-label="选择采集包"
                 value={bundleId}
-                onChange={(e) =>
-                  nav.set({
-                    bundle: e.target.value,
-                    cursor: "",
-                    id: "",
-                    pod: "",
-                    file: "",
-                  })
-                }
+                onChange={(e) => nav.selectScope({ bundle: e.target.value })}
               >
                 <option value="">选择采集包</option>
                 {bundles.map((b) => (
@@ -349,6 +359,32 @@ export function App() {
               onChange={(e) => void send(e.target.files)}
             />
           </div>
+          {current && (
+            <div className="package-toggle">
+              <button
+                className="ghost"
+                onClick={() => {
+                  if (page === "overview") setPackagesClosed(!packagesClosed);
+                  else setManage(!manage);
+                }}
+              >
+                管理采集包 · {bundles.length} 份
+              </button>
+            </div>
+          )}
+          {current && (page === "overview" ? !packagesClosed : manage) && (
+            <BundlePanel
+              caseId={caseId}
+              bundles={bundles}
+              selected={bundleId}
+              onSelect={(bundle) => nav.selectScope({ bundle })}
+              onDelete={(b) => void removeBundle(b)}
+              onClose={() => {
+                setManage(false);
+                setPackagesClosed(true);
+              }}
+            />
+          )}
           {upload && (
             <div className="note">
               上传 {upload.name} · {upload.progress}%{" "}
@@ -396,12 +432,15 @@ export function App() {
           ) : props ? (
             <>
               {page === "overview" && <OverviewPage {...props} />}
-              {(["pods", "nodes", "files", "resources", "events"] as const).map(
+              {(["pods"] as const).map(
                 (kind) =>
                   page === kind && (
                     <BrowsePage key={kind} kind={kind} {...props} />
                   ),
               )}
+              {page === "nodes" && <NodesPage {...props} />}
+              {page === "resources" && <ResourcesPage {...props} />}
+              {page === "files" && <FilesPage {...props} />}
               {page === "pod-logs" && <LogsPage {...props} />}
               {page === "components" && <LogsPage {...props} componentMode />}
               {page === "system" && <SystemPage {...props} />}

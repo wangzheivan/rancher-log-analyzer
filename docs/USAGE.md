@@ -231,3 +231,36 @@ python3 scripts/restore-workspace.py --base-url "http://<节点IP>:30080" \
 备份脚本匹配采集根目录时若存在歧义会停止；恢复脚本仅允许恢复到空工作区。备份包含原始采集数据，必须保留在私有本地目录。它不改变临时会话模式。
 
 分类路径依据 [Rancher 官方采集脚本](https://github.com/rancherlabs/support-tools/blob/master/collection/rancher/v2.x/logs-collector/rancher2_logs_collector.sh)。官方脚本的扁平日志来自 `kubectl logs --all-containers`，本地 CRI 目录用于 Agent/API 不可用等采集分支；页面不把这些来源解释为实时集群信息。
+
+## 0.2.1 展示体验调整
+
+概览上方默认显示“案例内采集包”，每页10份，包含采集节点、时间、状态与解压体积；可切换、删除或取消导入。其他页面通过“管理采集包”展开。“新建案例”保持独立可见。切换案例或采集包清空包内筛选、目录和日志选择；同包详情返回恢复原有筛选与分页。
+
+节点恢复卡片展示，每页12张；搜索支持名称和采集到的 IP。卡片展示容量、可分配资源、系统版本、Conditions 和关联 Pod 数量，点击名称进入详情。资源快照恢复左侧类型数量、右侧搜索表格；类型和记录分别分页。存在有效文本采集表时使用原始列，JSON 继续优先用于 Pod/Node 详情；只有 JSON 时使用稳定的展示列。搜索覆盖可见资源列，不将索引内部字段作为列展示。
+
+独立事件页面已移除，详情中的关联事件每页10条；旧事件页链接转到资源快照的 events 类别。事件元数据接口仍兼容，原始文件保持可访问。
+
+原始文件分为采集元信息、主机、网络、资源清单、资源详情、Pod日志、组件日志、运行时、etcd、配置与证书、其他；每个文件只属于一个用途，总数和体积覆盖全部采集文件。用途、目录前缀和路径关键字可组合筛选，文件每页50条；目录按展开查询下级，不传输整棵目录树。分类显示全包数量与体积，目录统计按所选用途计算，文件结果显示组合筛选后的数量与体积。
+
+命名空间按名称排序，以清单、资源对象、有效 Describe 对象和可识别日志为依据。只有采集器预设的 Describe 文件名、不含对象的输出不会被当作真实命名空间；没有日志的有效命名空间仍可选择。候选项每页50条，可以直接搜索后续页中的名称。
+
+普通 Linux 文件名中的冒号（例如 `etcd-metrics-127.0.0.1:2381.txt`）已兼容；盘符路径、绝对路径、路径穿越、反斜杠、链接和特殊文件仍拒绝。无需修改原压缩包或重命名采集文件。
+
+分页接口补充：
+
+- `/catalog/fileGroups`：用途分类、文件数与字节数。
+- `/catalog/fileDirectories?directory=rke2&group=podLogs`：指定目录下的子目录及其匹配文件统计。
+- `/catalog/files?group=podLogs&directory=rke2/podlogs&q=keyword`：组合筛选；`bytes` 为匹配结果总大小。
+- `/catalog/nodes?q=192.0.2.10&limit=12`：名称/IP 搜索，记录包含 `podCount`。
+- `/catalog/resources?resource=pods`：响应附带 `columns、source、state、note`，列顺序与表格来源保持一致。
+
+所有新目录接口仍返回 `items、total、nextCursor、previousCursor`，最大页长200，不读取日志全文。
+
+浏览器体验回归默认使用合成包；设置 `UX_ARCHIVE` 可改用私有真实样本（测试约定为324文件、76 Pod、3节点、14命名空间、112个Pod日志文件）：
+
+```bash
+UX_ARCHIVE=/path/to/private-bundle.tar.gz E2E_BASE_URL=http://127.0.0.1:18080 \
+  npm --prefix frontend run test:e2e -- ux.spec.ts
+```
+
+测试只删除自己创建的案例。真实包、备份、界面截图和部署参数不得提交公开仓库。

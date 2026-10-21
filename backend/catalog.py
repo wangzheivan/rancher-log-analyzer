@@ -12,6 +12,7 @@ import ijson
 from threading import BoundedSemaphore
 
 from .archive import Cancelled, ImportFailure
+from .file_catalog import file_group, GROUPS, directory_prefix, grouped_catalog
 from .classification import classify, load_rules
 from .parsers.bundle import Bundle
 from .parsers.details import describe_blocks, parse_describe
@@ -160,6 +161,7 @@ class IndexedBundle:
             CREATE INDEX item_uid ON items(kind,uid);
             CREATE INDEX item_log_pod ON items(kind,json_extract(payload,'$.podId'));
             CREATE TABLE sources(name TEXT PRIMARY KEY, source TEXT, state TEXT, note TEXT, columns TEXT);
+            CREATE TABLE table_sources(name TEXT PRIMARY KEY, source TEXT, state TEXT, note TEXT, columns TEXT);
             CREATE TABLE descriptions(kind TEXT, ns TEXT, name TEXT, source TEXT, start INTEGER, end INTEGER,
               PRIMARY KEY(kind,ns,name));
             CREATE TABLE relations(pod TEXT, file TEXT, PRIMARY KEY(pod,file));
@@ -237,14 +239,22 @@ class IndexedBundle:
                 " ".join(
                     str(data.get(k, ""))
                     for k in (
-                        "name",
-                        "namespace",
-                        "path",
-                        "node",
-                        "reason",
-                        "message",
-                        "objectName",
-                        "objectKind",
+                        (
+                            tuple(data.keys())
+                            if kind.startswith("resource:")
+                            else (
+                                "name",
+                                "ip",
+                                "IP",
+                                "namespace",
+                                "path",
+                                "node",
+                                "reason",
+                                "message",
+                                "objectName",
+                                "objectKind",
+                            )
+                        )
                     )
                 ).lower(),
                 encoded(data),
@@ -277,6 +287,8 @@ class IndexedBundle:
                     "path": key,
                     "size": size,
                     "name": key,
+                    "group": file_group(key),
+                    "groupLabel": GROUPS[file_group(key)],
                     "category": key.split("/")[0] if "/" in key else "采集元数据",
                 },
             )
@@ -301,6 +313,10 @@ class IndexedBundle:
                     self._resource_row(name, row, source, count)
                     count += 1
                 self.source(name, source, "ok" if count else "empty", columns=columns)
+                self.writer.execute(
+                    "INSERT OR REPLACE INTO table_sources SELECT * FROM sources WHERE name=?",
+                    (name,),
+                )
                 self.writer.execute("RELEASE resource")
             except (ValueError, UnicodeError) as exc:
                 self.writer.execute("ROLLBACK TO resource")
@@ -316,15 +332,21 @@ class IndexedBundle:
             self.writer.commit()
         for path in sorted(directory.glob("*.json")):
             name, source = path.stem, path.relative_to(self.root).as_posix()
+            table = self.writer.execute(
+                "SELECT * FROM table_sources WHERE name=?", (name,)
+            ).fetchone()
+            if table and name not in ("pods", "nodes", "events"):
+                continue
             self.writer.execute("SAVEPOINT structured")
             try:
                 kind = (
                     name if name in ("pods", "nodes", "events") else "resource:" + name
                 )
                 self.writer.execute("DELETE FROM items WHERE kind=?", (kind,))
-                self.writer.execute(
-                    "DELETE FROM items WHERE kind=?", ("resource:" + name,)
-                )
+                if not table:
+                    self.writer.execute(
+                        "DELETE FROM items WHERE kind=?", ("resource:" + name,)
+                    )
                 count = 0
                 for item in json_items(path):
                     self.check()
@@ -525,9 +547,7 @@ class IndexedBundle:
 
     def _logs(self):
         namespaces = set()
-        for row in self.writer.execute(
-            "SELECT DISTINCT ns FROM items WHERE kind IN ('pods','events')"
-        ):
+        for row in self.writer.execute("SELECT DISTINCT ns FROM items WHERE ns<>''"):
             if row["ns"]:
                 namespaces.add(row["ns"])
         for row in self.writer.execute(
@@ -535,6 +555,10 @@ class IndexedBundle:
         ):
             if row["name"]:
                 namespaces.add(row["name"])
+        for row in self.writer.execute(
+            "SELECT DISTINCT ns FROM descriptions WHERE ns<>''"
+        ):
+            namespaces.add(row["ns"])
         files = self.writer.execute("SELECT payload FROM items WHERE kind='files'")
         # At most the archive entry limit of small metadata records, never file contents.
         for entry in files:
@@ -818,7 +842,13 @@ class IndexedBundle:
         has_logs=False,
         name="",
         reason="",
+        group="",
+        directory="",
     ):
+        if group and group not in GROUPS:
+            raise ValueError("未知文件用途")
+        if kind in ("fileGroups", "fileDirectories"):
+            return grouped_catalog(self, kind, limit, cursor, q, group, directory)
         allowed = {
             "pods",
             "nodes",
@@ -862,6 +892,10 @@ class IndexedBundle:
                         if source["name"] in ("pods", "nodes", "events")
                         else "resource:" + source["name"]
                     )
+                    if conn.execute(
+                        "SELECT 1 FROM table_sources WHERE name=?", (source["name"],)
+                    ).fetchone():
+                        actual = "resource:" + source["name"]
                     count = conn.execute(
                         "SELECT count(*) FROM items WHERE kind=?", (actual,)
                     ).fetchone()[0]
@@ -889,6 +923,12 @@ class IndexedBundle:
                 ),
                 "previousCursor": token(max(0, offset - limit)) if offset else None,
             }
+        table_source = None
+        if kind == "resources":
+            with self.connection() as conn:
+                table_source = conn.execute(
+                    "SELECT * FROM table_sources WHERE name=?", (resource,)
+                ).fetchone()
         actual = (
             (
                 resource
@@ -898,6 +938,8 @@ class IndexedBundle:
             if kind == "resources"
             else kind
         )
+        if table_source:
+            actual = "resource:" + resource
         params = [actual]
         where = ["i.kind=?"]
         for column, value in (
@@ -910,6 +952,14 @@ class IndexedBundle:
             if value:
                 where.append(f"i.{column}=?")
                 params.append(value)
+        if kind == "files":
+            if group:
+                where.append("json_extract(i.payload,'$.group')=?")
+                params.append(group)
+            if directory:
+                prefix = directory_prefix(directory)
+                where.append("substr(json_extract(i.payload,'$.path'),1,?)=?")
+                params.extend([len(prefix), prefix])
         if name:
             where.append("i.name=?")
             params.append(name)
@@ -957,7 +1007,11 @@ class IndexedBundle:
             order = (
                 "CASE WHEN json_extract(i.payload,'$.variant')='current' THEN 0 ELSE 1 END,json_extract(i.payload,'$.instance') DESC,json_extract(i.payload,'$.rotation'),i.seq"
                 if kind == "logs"
-                else "i.seq"
+                else (
+                    "i.name COLLATE NOCASE,i.key"
+                    if kind in ("namespaces", "files")
+                    else "i.seq"
+                )
             )
             records = conn.execute(
                 f"SELECT i.payload,i.key FROM items i WHERE {condition} ORDER BY {order} LIMIT ? OFFSET ?",
@@ -966,6 +1020,11 @@ class IndexedBundle:
             rows = []
             for r in records:
                 data = json.loads(r["payload"])
+                if kind == "nodes":
+                    data["podCount"] = conn.execute(
+                        "SELECT count(*) FROM items WHERE kind='pods' AND node=?",
+                        (data["name"],),
+                    ).fetchone()[0]
                 if kind in ("pods", "logPods"):
                     if kind == "pods":
                         logs = conn.execute(
@@ -1024,14 +1083,51 @@ class IndexedBundle:
             "previousCursor": previous_cursor,
         }
         if kind == "resources":
-            result["source"] = next(
-                (
-                    r["source"]
-                    for r in self.overview["resources"]
-                    if r["name"] == resource
-                ),
-                "",
-            )
+            with self.connection() as conn:
+                source = (
+                    table_source
+                    or conn.execute(
+                        "SELECT * FROM sources WHERE name=?", (resource,)
+                    ).fetchone()
+                )
+            if source:
+                result.update(
+                    {
+                        "source": source["source"],
+                        "columns": json.loads(source["columns"]),
+                        "state": source["state"],
+                        "note": source["note"],
+                    }
+                )
+            if not result.get("columns") and rows:
+                columns = [k for k in rows[0] if k.upper() == k]
+                if not columns:
+                    mapping = {
+                        "name": "NAME",
+                        "namespace": "NAMESPACE",
+                        "ready": "READY",
+                        "roles": "ROLES",
+                        "ip": "INTERNAL-IP",
+                        "kubeletVersion": "VERSION",
+                        "type": "TYPE",
+                        "reason": "REASON",
+                        "objectName": "OBJECT",
+                        "message": "MESSAGE",
+                        "time": "TIME",
+                    }
+                    columns = [v for k, v in mapping.items() if k in rows[0]]
+                    result["items"] = [
+                        {mapping[k]: row.get(k, "") for k in mapping if k in rows[0]}
+                        for row in rows
+                    ]
+                result["columns"] = columns
+        if kind == "files":
+            with self.connection() as conn:
+                result["bytes"] = conn.execute(
+                    f"SELECT coalesce(sum(json_extract(i.payload,'$.size')),0) FROM items i WHERE {condition}",
+                    params,
+                ).fetchone()[0]
+
         return result
 
     def entity(self, kind, entity_id):

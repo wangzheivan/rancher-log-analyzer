@@ -42,7 +42,7 @@ export function Panel({
   action,
   children,
 }: {
-  title: string;
+  title: ReactNode;
   action?: ReactNode;
   children: ReactNode;
 }) {
