@@ -9,6 +9,7 @@ import {
   Layers,
   ClipboardCheck,
   ShieldCheck,
+  SearchCheck,
   HardDrive,
   Upload,
   Plus,
@@ -29,10 +30,12 @@ import { NodesPage } from "./pages/Nodes";
 import { ResourcesPage } from "./pages/Resources";
 import { FilesPage } from "./pages/Files";
 import { BundlePanel } from "./components/BundlePanel";
+import { AnalysisPage } from "./pages/Analysis";
 import { CertificatesPage } from "./pages/Certificates";
 import { CompletenessPage } from "./pages/Completeness";
 const pages = [
   ["overview", "采集概览", LayoutDashboard],
+  ["analysis", "问题发现", SearchCheck],
   ["nodes", "集群节点", Server],
   ["pods", "Pod 工作负载", Boxes],
   ["pod-logs", "Pod 日志", Terminal],
@@ -438,6 +441,7 @@ export function App() {
           ) : props ? (
             <>
               {page === "overview" && <OverviewPage {...props} />}
+              {page === "analysis" && <AnalysisPage {...props} />}
               {(["pods"] as const).map(
                 (kind) =>
                   page === kind && (

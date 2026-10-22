@@ -13,6 +13,10 @@ from .store import Store
 from .classification import load_rules
 
 
+class AnalysisAction(BaseModel):
+    action: str = Field(pattern='^(continue|cancel|restart)$')
+
+
 class CaseName(BaseModel):
     name: str = Field(min_length=1, max_length=100)
 
@@ -27,6 +31,10 @@ class CaseName(BaseModel):
 def create_app(settings=None):
     settings = settings or Settings()
     load_rules(settings.classification_rules)
+    from .analysis.config import thresholds
+    thresholds(settings.analysis_thresholds)
+    if min(settings.analysis_limit, settings.analysis_scan_bytes, settings.analysis_scan_files, settings.analysis_file_bytes) <= 0:
+        raise ValueError('分析预算必须为正数')
     store = Store(settings)
 
     @asynccontextmanager
@@ -35,7 +43,7 @@ def create_app(settings=None):
         yield
         store.close()
 
-    app = FastAPI(title='Rancher Log Explorer', version='0.2.3', lifespan=lifespan,
+    app = FastAPI(title='Rancher Log Explorer', version='0.3.0', lifespan=lifespan,
                   docs_url=None, redoc_url=None)
     app.state.store = store
 
@@ -57,7 +65,7 @@ def create_app(settings=None):
 
     @app.get('/api/v1/health')
     def health():
-        return {'status': 'ok', 'mode': 'ephemeral', 'version': '0.2.3'}
+        return {'status': 'ok', 'mode': 'ephemeral', 'version': '0.3.0'}
 
     @app.get('/api/v1/session')
     def session():
@@ -137,6 +145,36 @@ def create_app(settings=None):
                 object_uid: str = Query('', max_length=100), has_logs: bool = False, name: str = Query('', max_length=253), reason: str = Query('', max_length=253), group: str = Query('', max_length=40), directory: str = Query('', max_length=4096), component_group: str = Query('', max_length=40)):
         return store.parsed(bundle_id).catalog(kind, limit, cursor, q, namespace, node, status, scope,
                                               component, resource, pod, object_name, object_kind, object_uid, has_logs, name, reason, group, directory, component_group)
+
+    @app.get('/api/v1/bundles/{bundle_id}/analysis')
+    def analysis_status(bundle_id: str):
+        return store.analysis_status(bundle_id)
+
+    @app.post('/api/v1/bundles/{bundle_id}/analysis', status_code=202)
+    def analysis_action(bundle_id: str, body: AnalysisAction):
+        return store.analysis_action(bundle_id, body.action)
+
+    @app.get('/api/v1/bundles/{bundle_id}/analysis/findings')
+    def analysis_findings(bundle_id: str, limit: int = Query(50, ge=1, le=200), cursor: str = Query('', max_length=2000),
+                          q: str = Query('', max_length=500), category: str = Query('', max_length=40),
+                          severity: str = Query('', max_length=30), evidence_type: str = Query('', max_length=30),
+                          namespace: str = Query('', max_length=253), node: str = Query('', max_length=253)):
+        analysis = store.get(bundle_id, ready=True).analysis
+        return analysis.findings(limit,cursor,q,category,severity,evidence_type,namespace,node) if analysis else {'items':[],'total':0,'nextCursor':None}
+
+    @app.get('/api/v1/bundles/{bundle_id}/analysis/findings/{finding_id}')
+    def analysis_detail(bundle_id: str, finding_id: str, cursor: str = Query('', max_length=2000),
+                        event_cursor: str = Query('', max_length=2000)):
+        record=store.get(bundle_id, ready=True)
+        if not record.analysis:
+            raise FileNotFoundError(finding_id)
+        result=record.analysis.detail(finding_id,cursor)
+        obj=result['object']
+        if obj.get('kind') in ('Pod','Node') and obj.get('id') != 'collected-host':
+            result['events']=record.bundle.catalog('events',limit=10,cursor=event_cursor,
+                object_name=obj.get('name',''),object_kind=obj['kind'],object_uid=obj.get('uid',''),namespace=obj.get('namespace',''))
+            result['eventPreview']=result['events']['items'][:3]
+        return result
 
     @app.get('/api/v1/bundles/{bundle_id}/certificates')
     def certificates(bundle_id: str, limit: int = Query(50, ge=1, le=200), cursor: str = Query('', max_length=2000),

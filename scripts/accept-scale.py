@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Measure bounded metadata APIs against a running resource-limited container."""
+
 import argparse, json, time, urllib.request, urllib.parse, subprocess, statistics, threading
 from pathlib import Path
 
@@ -8,6 +9,8 @@ parser.add_argument("--base-url", default="http://127.0.0.1:18080")
 parser.add_argument("--container", default="rancher-validation")
 parser.add_argument("--archive", default="/tmp/rancher-scale.tar.gz")
 parser.add_argument("--output", default="artifacts/scale.json")
+parser.add_argument("--analysis", action="store_true")
+parser.add_argument("--expected-abnormal", type=int, default=0)
 args = parser.parse_args()
 
 
@@ -93,6 +96,36 @@ try:
     index = status["indexBytes"]
     events = request(base + "/catalog/events")
     assert events["total"] == 1
+    analysis_metrics = {}
+    if args.analysis:
+        analysis_started = time.perf_counter()
+        for _ in range(1200):
+            analysis = request(base + "/analysis")
+            if analysis["state"] not in ("running", "queued"):
+                break
+            time.sleep(0.05)
+        assert analysis["state"] == "complete", analysis
+        finding_times = []
+        for _ in range(20):
+            stamp = time.perf_counter()
+            result = request(
+                base
+                + "/analysis/findings?evidence_type=snapshot&category=cluster&limit=50"
+            )
+            finding_times.append(time.perf_counter() - stamp)
+            assert len(result["items"]) <= 50
+            if args.expected_abnormal:
+                assert result["total"] == args.expected_abnormal, result["total"]
+        analysis_p95 = sorted(finding_times)[18]
+        assert analysis_p95 < 1
+        analysis_metrics = {
+            "analysisProcessingSeconds": analysis.get("processingSeconds"),
+            "analysisResultBytes": analysis["resultBytes"],
+            "analysisScannedBytes": analysis["coverage"]["scannedBytes"],
+            "analysisQueryP95Seconds": analysis_p95,
+            "analysisCounts": analysis["counts"],
+            "abnormalPods": args.expected_abnormal,
+        }
     measured = int(
         subprocess.check_output(
             ["docker", "exec", args.container, "cat", "/sys/fs/cgroup/memory.peak"]
@@ -121,6 +154,7 @@ try:
     print(
         json.dumps(
             {
+                **analysis_metrics,
                 "importSeconds": elapsed,
                 "peakCgroupMemoryBytes": peak[0],
                 "indexBytes": index,
@@ -139,6 +173,7 @@ try:
     output.write_text(
         json.dumps(
             {
+                **analysis_metrics,
                 "importSeconds": elapsed,
                 "peakCgroupMemoryBytes": peak[0],
                 "indexBytes": index,

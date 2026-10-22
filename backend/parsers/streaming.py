@@ -66,6 +66,14 @@ def text_rows(path):
         if not title or title.startswith("No resources found"):
             return
         columns = re.split(r"\s{2,}", title)
+        event_columns = {"TYPE", "REASON", "OBJECT", "MESSAGE"}.issubset(columns)
+        starts = [
+            m.start()
+            for m in re.finditer(
+                r"\S(?:.*?\S)?(?=\s{2,}|$)",
+                header.decode("utf-8", errors="replace").rstrip(),
+            )
+        ]
         if len(columns) < 2:
             raise ValueError("不是可识别的资源表")
         while line := stream.readline(65537):
@@ -78,6 +86,21 @@ def text_rows(path):
                 line.decode("utf-8", errors="replace").strip(),
                 maxsplit=len(columns) - 1,
             )
+            if event_columns and len(starts) == len(columns):
+                raw = line.decode("utf-8", errors="replace").rstrip("\r\n")
+                cells = [
+                    raw[
+                        start : (starts[i + 1] if i + 1 < len(starts) else len(raw))
+                    ].strip()
+                    for i, start in enumerate(starts)
+                ]
+                candidate = dict(zip(columns, cells))
+                # kubectl wide Events includes optional blank SUBOBJECT/SOURCE columns.
+                if candidate.get("TYPE") in (
+                    "Warning",
+                    "Normal",
+                ) and "/" in candidate.get("OBJECT", ""):
+                    values = cells
             if len(values) != len(columns):
                 raise ValueError("资源表存在无法识别的行")
             yield columns, dict(zip(columns, values))

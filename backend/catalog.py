@@ -162,11 +162,13 @@ class IndexedBundle:
             CREATE INDEX item_scope ON items(kind,scope,component,seq);
             CREATE INDEX item_uid ON items(kind,uid);
             CREATE INDEX item_log_pod ON items(kind,json_extract(payload,'$.podId'));
+            CREATE INDEX event_object ON items(kind,ns,json_extract(payload,'$.objectName'),json_extract(payload,'$.objectKind'));
             CREATE TABLE sources(name TEXT PRIMARY KEY, source TEXT, state TEXT, note TEXT, columns TEXT);
             CREATE TABLE table_sources(name TEXT PRIMARY KEY, source TEXT, state TEXT, note TEXT, columns TEXT);
             CREATE TABLE descriptions(kind TEXT, ns TEXT, name TEXT, source TEXT, start INTEGER, end INTEGER,
               PRIMARY KEY(kind,ns,name));
             CREATE TABLE relations(pod TEXT, file TEXT, PRIMARY KEY(pod,file));
+            CREATE INDEX relation_file ON relations(file,pod);
         """
         )
         writer.execute(f"PRAGMA max_page_count={max(1,limit//4096)}")
@@ -432,7 +434,15 @@ class IndexedBundle:
                 "uid": "",
                 "roles": row.get("ROLES", "未知"),
                 "ip": row.get("INTERNAL-IP", "未知"),
-                "ready": "True" if row.get("STATUS") == "Ready" else "Unknown",
+                "ready": (
+                    "True"
+                    if row.get("STATUS", "").split(",")[0] == "Ready"
+                    else (
+                        "False"
+                        if row.get("STATUS", "").split(",")[0] == "NotReady"
+                        else "Unknown"
+                    )
+                ),
                 "status": row.get("STATUS", "Unknown"),
                 "kubeletVersion": row.get("VERSION", "未知"),
                 "osImage": row.get("OS-IMAGE", "未知"),

@@ -1,6 +1,6 @@
 image:
   repository: registry.example.com/rancher-log-analyzer/rancher-log-analyzer
-  tag: "0.2.3"
+  tag: "0.3.0"
   pullPolicy: IfNotPresent
 imagePullSecrets: []
 service:
@@ -28,3 +28,10 @@ resources:
     ephemeral-storage: 14Gi
 nodeSelector: {}
 tolerations: []
+
+analysis:
+  resultBytes: "33554432"
+  scanBytes: "134217728"
+  scanFiles: "200"
+  fileBytes: "8388608"
+  thresholds: {}

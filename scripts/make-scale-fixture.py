@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Create portable synthetic metadata and nested logs without production data."""
+
 import argparse
 import io
 import json
@@ -9,6 +10,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument("--pods", type=int, default=10000)
 parser.add_argument("--nodes", type=int, default=300)
 parser.add_argument("--output", default="/tmp/rancher-scale.tar.gz")
+parser.add_argument("--abnormal-pods", type=int, default=0)
 args = parser.parse_args()
 pods = []
 for i in range(args.pods):
@@ -36,7 +38,11 @@ for i in range(args.pods):
                 "initContainers": [{"name": "init", "image": "example/init:1"}],
             },
             "status": {
-                "phase": "Succeeded" if i == 1 else "Running",
+                "phase": (
+                    "Failed"
+                    if i < args.abnormal_pods
+                    else "Succeeded" if i == 1 else "Running"
+                ),
                 "podIP": "192.0.2.10",
                 "containerStatuses": [
                     {

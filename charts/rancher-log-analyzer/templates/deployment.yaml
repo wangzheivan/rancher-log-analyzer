@@ -56,6 +56,16 @@ spec:
               value: {{ .Values.limits.archiveDepth | quote }}
             - name: MAX_INDEX_BYTES
               value: {{ .Values.limits.indexBytes | quote }}
+            - name: MAX_ANALYSIS_BYTES
+              value: {{ .Values.analysis.resultBytes | quote }}
+            - name: ANALYSIS_SCAN_BYTES
+              value: {{ .Values.analysis.scanBytes | quote }}
+            - name: ANALYSIS_SCAN_FILES
+              value: {{ .Values.analysis.scanFiles | quote }}
+            - name: ANALYSIS_FILE_BYTES
+              value: {{ .Values.analysis.fileBytes | quote }}
+            - name: ANALYSIS_THRESHOLDS
+              value: {{ .Values.analysis.thresholds | toJson | quote }}
             - name: LOG_CLASSIFICATION_RULES
               value: {{ .Values.logClassificationRules | toJson | quote }}
           resources:

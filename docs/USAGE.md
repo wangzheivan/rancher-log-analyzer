@@ -295,3 +295,12 @@ Pod 日志文件列表以 Pod 名称和命名空间为主，容器与实例信�
 合成展示回归包可通过 `python3 scripts/make-display-fixture.py` 生成，浏览器测试前还需生成已有 `make-scale-fixture.py` 和 `make-test-fixture.py` 的测试包；全部为合成数据。
 
 macOS 文件选择兼容已由用户在 Mac Chrome 和 Edge 原生窗口复测：可以正常选择并上传采集包。
+
+
+## 问题发现（0.3.0）
+
+新增独立离线规则初筛页，采集包ready后自动排队。快照/配置发现、日志历史信号和无法判断分开呈现；可筛选、查看关联事件并跳到对象或原文。支持有限扫描、继续、取消及重新分析，正常业务日志不自动全量扫描。
+
+资源仅属于采集节点，角色、CNI和配置证据不足时不强行判断；不提供健康评分，不自动修复或访问在线集群。分析结果为独立临时SQLite，预算计入会话配额；分析失败不影响已有展示。`MAX_ANALYSIS_BYTES`及`ANALYSIS_SCAN_*`/`ANALYSIS_FILE_BYTES`/`ANALYSIS_THRESHOLDS`均可配置，Helm values提供对应`analysis`字段。
+
+首批规则、阈值、证据语义、API和验收方法见[问题发现说明](SCREENING.md)。本轮同时修复Events宽表可选空列导致整表回滚的问题，保留原始列与事件时间。
