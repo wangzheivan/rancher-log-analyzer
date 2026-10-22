@@ -10,6 +10,54 @@ import {
 } from "lucide-react";
 import { useCatalog } from "../hooks";
 import type { Item, PageData } from "../model";
+export const componentGroups: Record<string, string> = {
+  kubernetes: "Kubernetes 核心",
+  distribution: "RKE2/K3s 服务",
+  runtime: "容器运行时",
+  host: "主机系统",
+  network: "网络与 DNS",
+  rancher: "Rancher 管理",
+};
+export function podStatusTone(status = ""): string {
+  if (status === "Running") return "good";
+  if (["Completed", "Succeeded"].includes(status)) return "blue";
+  if (
+    /Failed|Error|BackOff|ErrImage|OOMKilled|Evicted|ContainerCannotRun|InvalidImageName|RunContainerError|CreateContainerConfigError/i.test(
+      status,
+    )
+  )
+    return "bad";
+  if (
+    /Pending|Init:|Initializing|ContainerCreating|PodInitializing|Terminating/i.test(
+      status,
+    )
+  )
+    return "warn";
+  return "";
+}
+export const podStatusColors: Record<string, string> = {
+  good: "#149b83",
+  blue: "#428ab9",
+  bad: "#cb3d4b",
+  warn: "#d8a448",
+  "": "#8c9aab",
+};
+export function PodStatus({
+  status,
+  attention,
+}: {
+  status?: string;
+  attention?: boolean;
+}) {
+  return (
+    <>
+      <Pill tone={podStatusTone(status)}>{status || "Unknown"}</Pill>
+      {status === "Running" && attention && (
+        <Pill tone="warn">容器未全部就绪</Pill>
+      )}
+    </>
+  );
+}
 export const scopes: Record<string, string> = {
   system: "系统/平台",
   business: "业务",

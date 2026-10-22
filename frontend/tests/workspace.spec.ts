@@ -78,7 +78,7 @@ test("大规模分页、Pod日志、详情返回、事件、分类和原文安�
     await expect(page.getByLabel("文件内容")).toContainText("ONLY-AT-END");
     await page
       .getByRole("navigation")
-      .getByRole("button", { name: "组件日志", exact: true })
+      .getByRole("button", { name: "组件与系统日志", exact: true })
       .click();
     await expect(page.getByLabel("文件内容")).toContainText(
       "synthetic kubelet",

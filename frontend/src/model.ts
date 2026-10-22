@@ -12,6 +12,9 @@ export interface Item {
   note?: string;
   scope?: string;
   component?: string;
+  componentGroup?: string;
+  componentReason?: string;
+  sourceType?: string;
   classificationReason?: string;
   pod?: string;
   podId?: string;

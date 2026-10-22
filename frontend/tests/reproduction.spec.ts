@@ -43,7 +43,7 @@ test("已部署复现包：嵌套日志关联与页面阅读", async ({ page, re
   await expect(page.getByLabel("文件内容")).toContainText("未找到匹配");
   await page
     .getByRole("navigation")
-    .getByRole("button", { name: "组件日志", exact: true })
+    .getByRole("button", { name: "组件与系统日志", exact: true })
     .click();
   await expect(page.locator(".log-source").first()).toBeVisible();
   await page

@@ -14,6 +14,8 @@ from threading import BoundedSemaphore
 from .archive import Cancelled, ImportFailure
 from .file_catalog import file_group, GROUPS, directory_prefix, grouped_catalog
 from .classification import classify, load_rules
+from .component_sources import identify, GROUPS as COMPONENT_GROUPS
+from .certificates import build_certificates
 from .parsers.bundle import Bundle
 from .parsers.details import describe_blocks, parse_describe
 from .parsers.streaming import encoded, json_items, text_rows
@@ -174,6 +176,7 @@ class IndexedBundle:
             self._resources()
             self._descriptions()
             self._logs()
+            build_certificates(self)
             writer.commit()
             self._finish()
         except sqlite3.DatabaseError as exc:
@@ -664,7 +667,7 @@ class IndexedBundle:
                 "pod": pod,
                 "uid": uid,
                 "podId": pod_id,
-                "container": container or ("合并日志" if pod else ""),
+                "container": container,
                 "instance": instance,
                 "rotation": rotation,
                 "variant": variant,
@@ -677,12 +680,22 @@ class IndexedBundle:
                 "note": note,
                 "snapshotPodId": metadata["id"] if snapshot_match else "",
             }
+            service = identify(path, namespace, pod, container)
+            log.update(service)
+            if service["serviceComponent"]:
+                log["component"] = service["serviceComponent"]
             self.put("logs", file["id"], log)
-            if scope == "system" and component:
+            if service["componentGroup"]:
+                component = service["serviceComponent"]
                 self.put(
                     "components",
                     component,
-                    {"id": component, "name": component, "scope": "system"},
+                    {
+                        "id": component,
+                        "name": component,
+                        "scope": "system",
+                        "componentGroup": service["componentGroup"],
+                    },
                 )
             if snapshot_match:
                 self.writer.execute(
@@ -722,6 +735,8 @@ class IndexedBundle:
         if prefix.startswith(b"\x1f\x8b") or b"\x00" in prefix:
             return "unsupported", "二进制或压缩源文件，暂不支持直接展示"
         text = prefix.decode(errors="replace").lstrip()
+        if text.strip() == "-- No entries --":
+            return "empty", "有效无记录"
         if ERROR_PREFIX.match(text):
             return "failed", text.splitlines()[0][:400]
         try:
@@ -844,7 +859,10 @@ class IndexedBundle:
         reason="",
         group="",
         directory="",
+        component_group="",
     ):
+        if component_group and component_group not in COMPONENT_GROUPS:
+            raise ValueError("未知组件分组")
         if group and group not in GROUPS:
             raise ValueError("未知文件用途")
         if kind in ("fileGroups", "fileDirectories"):
@@ -859,6 +877,7 @@ class IndexedBundle:
             "events",
             "resources",
             "components",
+            "componentLogs",
         }
         if kind not in allowed:
             raise ValueError("未知目录类型")
@@ -936,7 +955,7 @@ class IndexedBundle:
                 else "resource:" + resource
             )
             if kind == "resources"
-            else kind
+            else "logs" if kind == "componentLogs" else kind
         )
         if table_source:
             actual = "resource:" + resource
@@ -949,9 +968,20 @@ class IndexedBundle:
             ("scope", scope),
             ("component", component),
         ):
-            if value:
+            if value and not (kind == "components" and column == "node"):
                 where.append(f"i.{column}=?")
                 params.append(value)
+        if kind == "componentLogs":
+            where.append("coalesce(json_extract(i.payload,'$.componentGroup'),'')<>''")
+        if component_group:
+            where.append("json_extract(i.payload,'$.componentGroup')=?")
+            params.append(component_group)
+        if kind == "components" and node:
+            # Components themselves have no node; derive candidates from matching sources.
+            where.append(
+                "EXISTS(SELECT 1 FROM items l WHERE l.kind='logs' AND l.node=? AND l.component=i.name AND coalesce(json_extract(l.payload,'$.componentGroup'),'')<>'')"
+            )
+            params.append(node)
         if kind == "files":
             if group:
                 where.append("json_extract(i.payload,'$.group')=?")
@@ -989,7 +1019,7 @@ class IndexedBundle:
             params.extend([object_uid, object_name])
         if has_logs and kind == "pods":
             where.append("EXISTS(SELECT 1 FROM relations r WHERE r.pod=i.key)")
-        signature = identity(*params, has_logs)
+        signature = identity(kind, *params, has_logs)
         offset = 0
         if cursor:
             try:
@@ -1006,7 +1036,7 @@ class IndexedBundle:
             ).fetchone()[0]
             order = (
                 "CASE WHEN json_extract(i.payload,'$.variant')='current' THEN 0 ELSE 1 END,json_extract(i.payload,'$.instance') DESC,json_extract(i.payload,'$.rotation'),i.seq"
-                if kind == "logs"
+                if kind in ("logs", "componentLogs")
                 else (
                     "i.name COLLATE NOCASE,i.key"
                     if kind in ("namespaces", "files")
@@ -1235,7 +1265,7 @@ class IndexedBundle:
             component_paths = {
                 json.loads(r["payload"])["path"]
                 for r in conn.execute(
-                    "SELECT payload FROM items WHERE kind='logs' AND scope='system'"
+                    "SELECT payload FROM items WHERE kind='logs' AND coalesce(json_extract(payload,'$.componentGroup'),'')<>''"
                 )
             }
         collector = self.read("collector-output.log", 1024 * 1024)

@@ -10,6 +10,7 @@ import {
   Pill,
   SearchBox,
   scopes,
+  componentGroups,
   statuses,
 } from "../components/Common";
 import { LogReader } from "../components/LogReader";
@@ -26,14 +27,15 @@ export function LogsPage({
     namespace: p.get("namespace") || "",
     pod: componentMode ? "" : pod,
     node: p.get("node") || "",
-    scope: componentMode ? "system" : p.get("scope") || "",
+    scope: componentMode ? "" : p.get("scope") || "",
+    component_group: componentMode ? p.get("componentGroup") || "" : "",
     component: p.get("component") || "",
     q: p.get("q") || "",
     cursor: p.get("cursor") || "",
   };
   const { data, error, loading } = useCatalog(
     componentMode || pod ? bundle : "",
-    "logs",
+    componentMode ? "componentLogs" : "logs",
     query,
   );
   useEffect(() => {
@@ -133,18 +135,39 @@ export function LogsPage({
         )}
         {componentMode && (
           <>
+            <label>
+              日志分组
+              <select
+                aria-label="组件分组"
+                value={query.component_group}
+                onChange={(e) =>
+                  filter({ componentGroup: e.target.value, component: "" })
+                }
+              >
+                <option value="">全部分组</option>
+                {Object.entries(componentGroups).map(([key, label]) => (
+                  <option key={key} value={key}>
+                    {label}
+                  </option>
+                ))}
+              </select>
+            </label>
             <AsyncSelect
               bundle={bundle}
               kind="nodes"
               label="节点"
               nameValue
               value={query.node}
-              onChange={(node) => filter({ node })}
+              onChange={(node) => filter({ node, component: "" })}
             />
             <AsyncSelect
               bundle={bundle}
               kind="components"
               label="组件"
+              filters={{
+                component_group: query.component_group,
+                node: query.node,
+              }}
               value={query.component}
               onChange={(component) => filter({ component })}
             />
@@ -159,7 +182,7 @@ export function LogsPage({
       </div>
       <div className="note">
         {componentMode
-          ? "系统/平台日志与业务日志使用独立入口；分类规则可配置，依据显示在文件下方。"
+          ? "按明确的组件及主机服务来源组织。监控等其他平台 Pod 请在 Pod 日志中查看；核心组件 Pod 可从两个入口打开同一源文件。"
           : "默认展示有采集日志的 Pod，包含已从快照消失的对象。文件中的实例号和 Pod UID 会保留，避免把旧实例误当成当前实例。"}
       </div>
       {!componentMode && !pod ? (
@@ -170,7 +193,7 @@ export function LogsPage({
         </Empty>
       ) : (
         <div className="log-layout">
-          <Panel title={componentMode ? "组件日志文件" : "容器与实例文件"}>
+          <Panel title={componentMode ? "组件与系统日志文件" : "日志文件"}>
             <Message error={error} loading={loading} />
             <div className="log-sources">
               {data?.items.map((log) => (
@@ -179,16 +202,36 @@ export function LogsPage({
                   key={log.id}
                   onClick={() => nav.set({ file: log.id }, true)}
                 >
-                  <strong>{log.container || log.component || log.name}</strong>
+                  <strong>
+                    {componentMode
+                      ? log.component || log.name
+                      : log.pod || log.name}
+                  </strong>
+                  {log.namespace && (
+                    <span className="log-namespace">{log.namespace}</span>
+                  )}
+                  <span>
+                    {log.container || (log.pod ? "未区分容器" : "服务日志")}
+                  </span>
                   <span>
                     {log.instance !== undefined && log.instance >= 0
-                      ? `实例 ${log.instance}${log.rotation || ""}`
+                      ? `采集实例 ${log.instance}${log.rotation || ""}`
                       : log.variant === "previous"
-                        ? "上一次合并日志"
+                        ? "上一次日志"
                         : log.variant === "current"
-                          ? "当前合并日志"
-                          : log.name}
+                          ? `当前日志${log.rotation || ""}`
+                          : "采集源文件"}
                   </span>
+                  {componentMode && (
+                    <span>
+                      {componentGroups[log.componentGroup || ""]} ·{" "}
+                      {log.sourceType === "journald"
+                        ? "journald"
+                        : log.sourceType === "pod"
+                          ? "Pod 日志"
+                          : "文件日志"}
+                    </span>
+                  )}
                   <small>{log.path}</small>
                   <div>
                     <Pill
@@ -200,7 +243,9 @@ export function LogsPage({
                             : ""
                       }
                     >
-                      {statuses[log.status || ""]}
+                      {log.status === "empty" && log.note === "有效无记录"
+                        ? "有效无记录"
+                        : statuses[log.status || ""]}
                     </Pill>
                     <Pill>{scopes[log.scope || "unknown"]}</Pill>
                   </div>
@@ -220,10 +265,37 @@ export function LogsPage({
             {file ? (
               <>
                 <div className="note compact-note">
-                  {chosen?.basis || "采集源文件"}
+                  {componentMode
+                    ? chosen?.componentReason || "采集源文件"
+                    : chosen?.basis || "采集源文件"}
                   {chosen?.classificationReason
                     ? ` · 分类依据：${chosen.classificationReason}`
                     : ""}
+                  {chosen?.pod && !chosen.container && (
+                    <div>
+                      采集器将该 Pod
+                      的所有容器日志输出到同一文件，未提供可靠的容器标识，无法拆分。
+                    </div>
+                  )}
+                  {componentMode && chosen?.podId && (
+                    <button
+                      className="link"
+                      onClick={() =>
+                        nav.go(
+                          "pod-logs",
+                          {
+                            pod: chosen.podId || "",
+                            podName: chosen.pod || "",
+                            namespace: chosen.namespace || "",
+                            file: chosen.id,
+                          },
+                          true,
+                        )
+                      }
+                    >
+                      在 Pod 日志中查看 →
+                    </button>
+                  )}
                   {chosen?.uid ? ` · UID：${chosen.uid}` : ""}
                   {chosen?.note && <div>{chosen.note}</div>}
                 </div>

@@ -8,6 +8,7 @@ import {
   Pagination,
   Panel,
   Pill,
+  PodStatus,
   SearchBox,
   Source,
   statuses,
@@ -124,17 +125,7 @@ export function BrowsePage({
                   <td>
                     <span className="mono">{row.ready}</span>
                     <br />
-                    <Pill
-                      tone={
-                        row.attention
-                          ? "warn"
-                          : row.status === "Running"
-                            ? "good"
-                            : ""
-                      }
-                    >
-                      {row.status}
-                    </Pill>
+                    <PodStatus status={row.status} attention={row.attention} />
                   </td>
                   <td>{row.node || "未提供"}</td>
                   <td>

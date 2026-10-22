@@ -152,7 +152,7 @@ Pod 工作负载的日志按钮跳转到独立 Pod 日志页。命名空间和 P
 
 支持官方扁平 `命名空间-Pod`、`-previous` 文件，以及 `命名空间_Pod_UID/容器/实例号.log` 和未压缩轮转文件。扁平文件依据清单唯一匹配，容器不明确时显示“合并日志”；嵌套文件保留 UID、容器与实例号，默认选较大实例号，不将其推断为实时运行实例。旧 UID 不关联到同名新 Pod。压缩或二进制源文件只展示位置与元信息。
 
-日志默认从末尾读取最多250条；支持开头、末尾、前后读取和不区分大小写的单文件搜索。每次最多扫描2 MiB，无匹配时可以沿游标继续。超长行分段标识，不在浏览器累积完整日志，不建立全文索引。组件日志页复用同一阅读器，按节点、组件或文件名筛选。
+日志默认从末尾读取最多250条；支持开头、末尾、前后读取和不区分大小写的单文件搜索。每次最多扫描2 MiB，无匹配时可以沿游标继续。超长行分段标识，不在浏览器累积完整日志，不建立全文索引。组件与系统日志页复用同一阅读器，按节点、组件或文件名筛选。
 
 Pod / Node 详情优先读取 JSON，使用 Describe 的对象区间补充。详情包含容器和 Init Container、镜像、探针、资源请求/限制、挂载、调度及 Conditions（以采集内容为准）。未提供的字段明确标记；详情原文入口从对应对象区间开始读取。Node 的关联 Pod 按页加载。详情返回保留 URL 中的列表筛选和分页；关联事件优先按 UID，只有名称时明确标注，原始相对时间不转换为绝对时间。
 
@@ -272,3 +272,26 @@ UX_ARCHIVE=/path/to/private-bundle.tar.gz E2E_BASE_URL=http://127.0.0.1:18080 \
 请选择未解压的原始采集包；`.tar` 和文件夹仍不支持。后端的 gzip/tar 内容验证、解包安全和配额限制继续生效，改后缀不能绕过校验。
 
 WSL 浏览器自动化覆盖选择后的上传与校验，不能代替 macOS 原生文件选择器验收。部署后需要在 Mac Chrome / Edge 中点击“上传采集包”，确认原包可选并完成上传。
+
+
+## 状态、组件来源与证书检查（0.2.3）
+
+Pod 状态使用固定颜色：Running 绿色，Completed/Succeeded 蓝色，等待、初始化及终止中橙色，失败或错误红色，未知灰色。Running 但容器未全部就绪时单独提示；历史重启次数不直接表示当前故障。
+
+Pod 日志文件列表以 Pod 名称和命名空间为主，容器与实例信息为辅。官方扁平日志通常由采集器合并该 Pod 的所有容器输出，因此显示“未区分容器”，不推断实际容器；当前、上一次、CRI 采集实例及原始路径继续保留。
+
+“组件与系统日志”按 Kubernetes 核心、RKE2/K3s 服务、容器运行时、主机系统、网络与 DNS、Rancher 管理分组。识别采用明确服务名、目录及受约束的 Pod 名称，不把整个系统命名空间全部纳入；监控、Fleet、NeuVector 等其他平台 Pod 仍在 Pod 页。核心组件 Pod 的两个入口引用同一文件，不拼接正文。`-- No entries --` 表示有效无记录，二进制 sysstat 文件只显示元信息。原有 `LOG_CLASSIFICATION_RULES` 仍控制 Pod 的系统/业务范围，不把自定义范围当作核心组件身份。
+
+新增接口：
+
+- `GET /api/v1/bundles/{id}/catalog/componentLogs`：组件文件分页，支持 `component_group`、`node`、`component`、`q`；`catalog/components` 支持分组和节点候选过滤。
+- 日志新增 `componentGroup`、`serviceComponent`、`sourceType`、`componentReason`，原有日志及原文接口继续保留。
+- `GET /api/v1/bundles/{id}/certificates`：分页参数 `limit`（默认50，最多200）、`cursor`、`q`、`status`、`purpose`、`basis=current|collected`、`zone`（IANA 时区）。响应包含 `items/total/nextCursor/previousCursor`、整体状态 `counts`、`checkedAt`、`referenceTime` 和 `referenceMessage`。状态为 `valid/expiring/expired/notYetValid/unknown`，用途为 `ca/client/server/other`；统计是整个包在所选时间基准下的数量，不随列表筛选变化。
+
+证书仅从 `certs` 目录的 `.crt/.cer/.pem` 候选文件解析 OpenSSL 文本；PEM/DER 等未支持的内容保留无法判断提示。每文件解析最多1 MiB，多证书分别编号，索引纳入原有配额。展示 CA、Subject、Issuer、SAN、生效及到期时间；不解析私钥，不验证证书链、吊销、密钥匹配或在线使用情况。
+
+证书以 UTC 判断和展示：到期时刻即为已过期，90天内到期含第90天边界，生效时刻起有效。剩余天数向下取整；临近到期不代表已过期。默认用服务端当前时间，每次新查询重新计算；同一次分页固定检查时刻，点击“刷新检查”返回第一页并重算。历史判断优先使用包中明确时区或偏移；`CST` 等歧义缩写不会猜测，需在页面输入如 `Asia/Shanghai` 的时区。夏令时歧义或不存在的本地时间拒绝判断。
+
+合成展示回归包可通过 `python3 scripts/make-display-fixture.py` 生成，浏览器测试前还需生成已有 `make-scale-fixture.py` 和 `make-test-fixture.py` 的测试包；全部为合成数据。
+
+macOS 文件选择兼容已由用户在 Mac Chrome 和 Edge 原生窗口复测：可以正常选择并上传采集包。

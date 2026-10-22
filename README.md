@@ -4,7 +4,9 @@ Rancher 官方日志采集包的中文可视化工具，支持：
 
 - 按案例管理多个节点的采集包，上传 `.tar.gz` / `.tgz` 文件。
 - 案例内采集包管理、可搜索的节点卡片、Pod / Node 详情、关联事件与资源快照。
-- 独立 Pod 日志页支持命名空间与 Pod 搜索、容器实例选择；组件日志与业务日志分类展示。
+- 独立 Pod 日志页支持命名空间与 Pod 搜索、容器及采集实例选择和正文搜索。
+- 按核心组件、RKE2/K3s、运行时、主机、网络/DNS 和 Rancher 服务浏览日志。
+- 检查采集证书的有效期，支持当前时间及采集时刻判断。
 - 查看采集完整性；SQLite 临时索引支持大规模清单的服务端分页。
 - 按用途分类和原始目录浏览文件，分块读取大日志并搜索关键字。
 
@@ -38,13 +40,13 @@ docker run -d \
 ```bash
 export KUBE_CONTEXT="your-cluster-context"
 export IMAGE_REPOSITORY="registry.example.com/your-project/rancher-log-analyzer"
-export IMAGE_TAG="0.2.2-$(date +%Y%m%d-%H%M%S)"
+export IMAGE_TAG="0.2.3-$(date +%Y%m%d-%H%M%S)"
 kubectl config use-context "$KUBE_CONTEXT"
 ```
 
 ### 构建镜像并部署
 
-脚本会构建并推送两个标签：唯一的具体版本（如 `0.2.2-20261021-180000`）和 `latest`。每次发布都会覆盖 `latest`，具体版本标签保留。Helm 使用具体版本部署，便于核验和回滚：
+脚本会构建并推送两个标签：唯一的具体版本（如 `0.2.3-20261022-144928`）和 `latest`。每次发布都会覆盖 `latest`，具体版本标签保留。Helm 使用具体版本部署，便于核验和回滚：
 
 ```bash
 docker login registry.example.com

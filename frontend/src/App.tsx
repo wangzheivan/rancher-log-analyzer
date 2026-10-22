@@ -8,6 +8,7 @@ import {
   Terminal,
   Layers,
   ClipboardCheck,
+  ShieldCheck,
   HardDrive,
   Upload,
   Plus,
@@ -28,13 +29,15 @@ import { NodesPage } from "./pages/Nodes";
 import { ResourcesPage } from "./pages/Resources";
 import { FilesPage } from "./pages/Files";
 import { BundlePanel } from "./components/BundlePanel";
+import { CertificatesPage } from "./pages/Certificates";
 import { CompletenessPage } from "./pages/Completeness";
 const pages = [
   ["overview", "采集概览", LayoutDashboard],
   ["nodes", "集群节点", Server],
   ["pods", "Pod 工作负载", Boxes],
   ["pod-logs", "Pod 日志", Terminal],
-  ["components", "组件日志", Layers],
+  ["components", "组件与系统日志", Layers],
+  ["certificates", "证书检查", ShieldCheck],
   ["resources", "资源快照", FileText],
   ["system", "主机与 etcd", HardDrive],
   ["completeness", "采集完整性", ClipboardCheck],
@@ -446,6 +449,7 @@ export function App() {
               {page === "files" && <FilesPage {...props} />}
               {page === "pod-logs" && <LogsPage {...props} />}
               {page === "components" && <LogsPage {...props} componentMode />}
+              {page === "certificates" && <CertificatesPage {...props} />}
               {page === "system" && <SystemPage {...props} />}
               {(page === "pod-detail" || page === "node-detail") && (
                 <DetailPage {...props} />

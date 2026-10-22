@@ -7,6 +7,7 @@ import {
   Pagination,
   Panel,
   Pill,
+  PodStatus,
   Source,
   value,
 } from "../components/Common";
@@ -86,6 +87,9 @@ export function DetailPage({ bundle, nav, onSource, overview }: PageProps) {
               </p>
             </div>
             <div className="table-actions">
+              {kind === "pods" && (
+                <PodStatus status={row.status} attention={row.attention} />
+              )}
               <Source path={row.source} onOpen={onSource} />
               {kind === "pods" && pod?.logCount ? (
                 <button
@@ -117,7 +121,7 @@ export function DetailPage({ bundle, nav, onSource, overview }: PageProps) {
                       ? {
                           命名空间: row.namespace,
                           节点: row.node,
-                          状态: row.status,
+
                           就绪: row.ready,
                           重启次数: row.restartCount,
                           IP: row.IP,
@@ -361,7 +365,12 @@ export function DetailPage({ bundle, nav, onSource, overview }: PageProps) {
                           </button>
                         </td>
                         <td>{p.namespace}</td>
-                        <td>{p.status}</td>
+                        <td>
+                          <PodStatus
+                            status={p.status}
+                            attention={p.attention}
+                          />
+                        </td>
                       </tr>
                     ))}
                   </tbody>

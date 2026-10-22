@@ -131,7 +131,7 @@ def test_log_identity_details_events(tmp_path):
     assert len(logs) == 9
     assert len(b.catalog("logPods")["items"]) == 3
     assert any(l["rotation"] for l in logs)
-    assert any(l["status"] == "failed" and l["container"] == "合并日志" for l in logs)
+    assert any(l["status"] == "failed" and l["container"] == "" for l in logs)
     assert any(l["status"] == "empty" for l in logs)
     old = [l for l in logs if l["uid"] == "old"]
     assert all(not l["snapshotPodId"] for l in old)

@@ -1,5 +1,11 @@
 import type { PageProps } from "./Browse";
-import { Panel, Pill, Source } from "../components/Common";
+import {
+  Panel,
+  Pill,
+  Source,
+  podStatusTone,
+  podStatusColors,
+} from "../components/Common";
 import { bytes } from "../api";
 import { Server, Boxes, Network, FileText, ShieldCheck } from "lucide-react";
 const colors = ["#149b83", "#73a9cf", "#d8a448", "#8d86c6"];
@@ -121,20 +127,24 @@ export function OverviewPage({ overview: s, nav, onSource }: PageProps) {
             <span className="big-number">{running}</span>
             <span className="muted"> / {s.counts.pods} Running</span>
             <div className="bars">
-              {Object.entries(s.podStatus).map(([status, count], i) => (
+              {Object.entries(s.podStatus).map(([status, count]) => (
                 <span
                   key={status}
                   style={{
                     width: `${(100 * count) / Math.max(s.counts.pods, 1)}%`,
-                    background: colors[i % colors.length],
+                    background: podStatusColors[podStatusTone(status)],
                   }}
                 />
               ))}
             </div>
-            {Object.entries(s.podStatus).map(([status, count], i) => (
+            {Object.entries(s.podStatus).map(([status, count]) => (
               <div className="legend-row" key={status}>
                 <span>
-                  <i style={{ background: colors[i % colors.length] }} />
+                  <i
+                    style={{
+                      background: podStatusColors[podStatusTone(status)],
+                    }}
+                  />
                   {status}
                 </span>
                 <strong>{count}</strong>

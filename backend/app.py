@@ -35,7 +35,7 @@ def create_app(settings=None):
         yield
         store.close()
 
-    app = FastAPI(title='Rancher Log Explorer', version='0.2.2', lifespan=lifespan,
+    app = FastAPI(title='Rancher Log Explorer', version='0.2.3', lifespan=lifespan,
                   docs_url=None, redoc_url=None)
     app.state.store = store
 
@@ -57,7 +57,7 @@ def create_app(settings=None):
 
     @app.get('/api/v1/health')
     def health():
-        return {'status': 'ok', 'mode': 'ephemeral', 'version': '0.2.2'}
+        return {'status': 'ok', 'mode': 'ephemeral', 'version': '0.2.3'}
 
     @app.get('/api/v1/session')
     def session():
@@ -134,9 +134,17 @@ def create_app(settings=None):
                 scope: str = Query('', max_length=30), component: str = Query('', max_length=253),
                 resource: str = Query('', max_length=253), pod: str = Query('', max_length=100),
                 object_name: str = Query('', max_length=253), object_kind: str = Query('', max_length=100),
-                object_uid: str = Query('', max_length=100), has_logs: bool = False, name: str = Query('', max_length=253), reason: str = Query('', max_length=253), group: str = Query('', max_length=40), directory: str = Query('', max_length=4096)):
+                object_uid: str = Query('', max_length=100), has_logs: bool = False, name: str = Query('', max_length=253), reason: str = Query('', max_length=253), group: str = Query('', max_length=40), directory: str = Query('', max_length=4096), component_group: str = Query('', max_length=40)):
         return store.parsed(bundle_id).catalog(kind, limit, cursor, q, namespace, node, status, scope,
-                                              component, resource, pod, object_name, object_kind, object_uid, has_logs, name, reason, group, directory)
+                                              component, resource, pod, object_name, object_kind, object_uid, has_logs, name, reason, group, directory, component_group)
+
+    @app.get('/api/v1/bundles/{bundle_id}/certificates')
+    def certificates(bundle_id: str, limit: int = Query(50, ge=1, le=200), cursor: str = Query('', max_length=2000),
+                     q: str = Query('', max_length=500), status: str = Query('', max_length=30),
+                     purpose: str = Query('', max_length=30), basis: str = Query('current', max_length=20),
+                     zone: str = Query('', max_length=100)):
+        from .certificates import certificate_page
+        return certificate_page(store.parsed(bundle_id), limit, cursor, q, status, purpose, basis, zone)
 
     @app.get('/api/v1/bundles/{bundle_id}/detail/{kind}/{entity_id}')
     def detail(bundle_id: str, kind: str, entity_id: str):
